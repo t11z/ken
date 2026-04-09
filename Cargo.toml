@@ -45,7 +45,7 @@ toml = "1.1"
 
 # TLS and certificates
 rustls = { version = "0.23", default-features = false, features = ["ring", "logging", "std", "tls12"] }
-rcgen = "0.14"
+rcgen = { version = "0.14", features = ["pem", "x509-parser"] }
 
 # Web framework (server)
 axum = "0.8"
