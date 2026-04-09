@@ -1,0 +1,62 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/ken-protocol",
+    "crates/ken-agent",
+    "crates/ken-server",
+]
+
+[workspace.lints.rust]
+unused_imports = "warn"
+unused_variables = "warn"
+rust_2018_idioms = { level = "warn", priority = -1 }
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+# Pedantic lints that generate more noise than value in this project:
+module_name_repetitions = "allow"  # Types like `EndpointId` in a module named `ids` are fine
+must_use_candidate = "allow"       # Not every returning function needs #[must_use]
+missing_errors_doc = "allow"       # Error conditions are documented in context, not per-function
+missing_panics_doc = "allow"       # Panic conditions are rare and covered by the no-unwrap rule
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1.51", features = ["rt-multi-thread", "macros", "net", "fs", "time", "signal", "sync", "io-util"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Error handling
+thiserror = "2.0"
+anyhow = "1.0"
+
+# Time and identifiers
+time = { version = "0.3", features = ["serde", "formatting", "parsing", "macros"] }
+uuid = { version = "1.23", features = ["v4", "serde"] }
+
+# Configuration
+toml = "1.1"
+
+# TLS and certificates
+rustls = { version = "0.23", default-features = false, features = ["ring", "logging", "std", "tls12"] }
+rcgen = { version = "0.14", features = ["pem", "x509-parser"] }
+
+# Web framework (server)
+axum = "0.8"
+tower-http = { version = "0.6", features = ["trace", "fs", "set-header"] }
+
+# Database (server)
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "sqlite", "time", "uuid", "macros", "migrate"] }
+
+# Templates (server)
+askama = "0.15"
+
+# Windows APIs (agent)
+windows = "0.62"
+windows-service = "0.8"
