@@ -8,7 +8,7 @@
 
 ## Context
 
-Ken is an architecture-driven project. Decisions are made by a human architect in collaboration with an LLM sparring partner, and implementation is delegated to Claude Code via prompt files. In this setup, the value of the project does not live in the source tree alone — it lives in the *reasoning behind* the source tree. Without a durable, structured record of why decisions were made, that reasoning evaporates the moment the conversation window closes.
+Ken is an architecture-driven project. Decisions are made by a human architect in collaboration with an LLM sparring partner, and implementation is delegated to Claude Code via task descriptions that reference ADRs. In this setup, the value of the project does not live in the source tree alone — it lives in the *reasoning behind* the source tree. Without a durable, structured record of why decisions were made, that reasoning evaporates the moment the conversation window closes.
 
 Architecture Decision Records (ADRs) solve this by capturing each significant decision as a small, immutable document committed alongside the code it governs. They are the project's memory, its onboarding material, and its defense against drift.
 
@@ -59,7 +59,7 @@ This is the most important rule in this document. The point of an ADR is to be a
 1. **Drafting.** A new ADR is created with status `Proposed`. The next sequence number is taken from the highest existing number plus one.
 2. **Discussion.** The architect and the sparring partner discuss the draft. Iteration on a Proposed ADR is free and expected.
 3. **Acceptance.** When the architect is satisfied, the status is changed to `Accepted` and the date is updated to the acceptance date. From this moment the ADR is immutable.
-4. **Implementation.** Claude Code is given prompts that reference the Accepted ADR by number. Code is built to comply with it.
+4. **Implementation.** Claude Code is given task descriptions that reference the Accepted ADR by number. Code is built to comply with it.
 5. **Supersession** (if needed). When an Accepted ADR no longer reflects the chosen direction, a new ADR is written. The new ADR's `Supersedes` field names the old one. The old ADR is updated *only* in its metadata block: status becomes `Superseded`, and `Superseded by` is filled in. Its body remains untouched.
 
 ### Authorship rules
