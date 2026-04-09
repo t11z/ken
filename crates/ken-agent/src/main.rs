@@ -14,6 +14,7 @@ mod audit;
 mod cli;
 mod config;
 mod ipc;
+mod killswitch;
 mod observer;
 mod remote_session;
 mod service;
@@ -112,29 +113,30 @@ fn print_status() {
     );
 }
 
-/// Activate the local kill switch (ADR-0001 T1-6).
+/// Activate the local kill switch (ADR-0001 T1-6, ADR-0012).
 fn activate_kill_switch() {
     let data_dir = config::data_dir();
     let paths = config::DataPaths::new(&data_dir);
 
-    if let Some(parent) = paths.kill_switch_file.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-
-    let content = format!(
-        "Kill switch activated at {}",
-        time::OffsetDateTime::now_utc()
-    );
-    match std::fs::write(&paths.kill_switch_file, content) {
+    let user = whoami();
+    match killswitch::activate(&paths.kill_switch_file, "user requested via CLI", &user) {
         Ok(()) => {
             println!("Kill switch activated. The Ken Agent service will not start.");
             println!("To reverse, delete: {}", paths.kill_switch_file.display());
+            println!("Then run: sc config KenAgent start= auto && sc start KenAgent");
         }
         Err(e) => {
             eprintln!("failed to activate kill switch: {e}");
             std::process::exit(1);
         }
     }
+}
+
+/// Get the current username for audit logging.
+fn whoami() -> String {
+    std::env::var("USERNAME")
+        .or_else(|_| std::env::var("USER"))
+        .unwrap_or_else(|_| "unknown".to_string())
 }
 
 /// Set up a Ctrl+C handler that sets the shutdown flag.
