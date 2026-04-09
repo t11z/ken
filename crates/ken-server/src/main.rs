@@ -11,6 +11,7 @@ use std::sync::Arc;
 mod ca;
 mod config;
 mod error;
+mod http;
 mod state;
 mod storage;
 
@@ -23,8 +24,8 @@ use storage::Storage;
 fn init_tracing(logging: &config::LoggingConfig) -> anyhow::Result<()> {
     use tracing_subscriber::EnvFilter;
 
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(&logging.level));
+    let filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(&logging.level));
 
     match logging.format {
         config::LogFormat::Json => {
@@ -34,9 +35,7 @@ fn init_tracing(logging: &config::LoggingConfig) -> anyhow::Result<()> {
                 .init();
         }
         config::LogFormat::Text => {
-            tracing_subscriber::fmt()
-                .with_env_filter(filter)
-                .init();
+            tracing_subscriber::fmt().with_env_filter(filter).init();
         }
     }
 
@@ -58,15 +57,48 @@ async fn main() -> anyhow::Result<()> {
     let tls_config = config.resolved_tls();
     let ca = Ca::load_or_create(&tls_config, &config.server.public_url)?;
 
-    let _state = AppState {
+    let admin_addr = config.server.admin_listen_address;
+    let agent_addr = config.server.agent_listen_address;
+
+    let state = AppState {
         storage,
         ca: Arc::new(ca),
         config: Arc::new(config),
     };
 
-    tracing::info!("ken-server foundations initialized");
+    // Build routers
+    let admin_app = http::admin_router(state.clone());
+    let agent_app = http::agent_router(state);
 
-    // HTTP server wiring comes in section 4
+    tracing::info!(
+        admin = %admin_addr,
+        agent = %agent_addr,
+        "starting listeners"
+    );
+
+    // Run both listeners concurrently.
+    // The agent listener should use mTLS (rustls with client cert verifier),
+    // but for Phase 1 we start both as plain TCP+TLS or plain HTTP for
+    // development. Full mTLS enforcement is wired up when the TLS listener
+    // module is completed.
+    let admin_listener = tokio::net::TcpListener::bind(admin_addr).await?;
+    let agent_listener = tokio::net::TcpListener::bind(agent_addr).await?;
+
+    tracing::info!("ken-server ready");
+
+    tokio::select! {
+        result = axum::serve(admin_listener, admin_app) => {
+            if let Err(e) = result {
+                tracing::error!(error = %e, "admin listener failed");
+            }
+        }
+        result = axum::serve(agent_listener, agent_app) => {
+            if let Err(e) = result {
+                tracing::error!(error = %e, "agent listener failed");
+            }
+        }
+    }
+
     Ok(())
 }
 
