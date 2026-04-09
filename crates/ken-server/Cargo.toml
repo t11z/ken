@@ -24,9 +24,11 @@ toml = { workspace = true }
 rustls = { workspace = true }
 rcgen = { workspace = true }
 axum = { workspace = true }
+axum-server = { version = "0.8", features = ["tls-rustls"] }
 tower-http = { workspace = true }
 sqlx = { workspace = true }
 askama = { workspace = true }
+x509-parser = "0.18"
 
 [dev-dependencies]
 tempfile = "3"
