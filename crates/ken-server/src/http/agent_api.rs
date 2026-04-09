@@ -25,6 +25,7 @@ pub fn routes() -> Router<AppState> {
         .route("/api/v1/heartbeat", post(heartbeat))
         .route("/api/v1/command_outcomes", post(command_outcomes))
         .route("/api/v1/time", get(server_time))
+        .route("/updates/latest.json", get(latest_update))
 }
 
 /// Process a heartbeat from an agent.
@@ -156,6 +157,23 @@ async fn server_time() -> Json<ServerTimeResponse> {
 #[derive(Serialize)]
 struct ServerTimeResponse {
     now: String,
+}
+
+/// Update check endpoint per ADR-0011.
+///
+/// `GET /updates/latest.json` — returns the latest available agent version.
+/// Phase 1 stub: always returns version "0.0.0" meaning no update available.
+/// Real MSI builds and signing are Phase 2 work.
+async fn latest_update() -> Json<LatestUpdateResponse> {
+    Json(LatestUpdateResponse {
+        version: "0.0.0".to_string(),
+    })
+}
+
+/// Response for the `/updates/latest.json` endpoint.
+#[derive(Serialize)]
+struct LatestUpdateResponse {
+    version: String,
 }
 
 fn format_time(t: OffsetDateTime) -> String {

@@ -20,6 +20,7 @@ mod net;
 mod observer;
 mod remote_session;
 mod service;
+mod updater;
 mod worker;
 
 use cli::Action;
