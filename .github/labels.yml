@@ -1,0 +1,126 @@
+# Ken repository labels.
+#
+# This file is the source of truth for labels on the GitHub repository.
+# The labels workflow (.github/workflows/labels.yml) applies this file
+# to the repository and deletes any label not listed here, so that the
+# label state on GitHub never drifts from what is recorded in the repo.
+
+# ─── Type ──────────────────────────────────────────────────────────
+- name: type/bug
+  color: d73a4a
+  description: Something is not working as documented
+
+- name: type/feature
+  color: a2eeef
+  description: New capability within the current scope
+
+- name: type/adr
+  color: 5319e7
+  description: Proposal, draft, or revision of an Architecture Decision Record
+
+- name: type/docs
+  color: 0075ca
+  description: Documentation improvement or correction
+
+- name: type/refactor
+  color: fbca04
+  description: Internal change without visible behavior change
+
+- name: type/question
+  color: d876e3
+  description: Request for clarification or discussion
+
+# ─── Area ──────────────────────────────────────────────────────────
+- name: area/agent
+  color: 1d76db
+  description: ken-agent crate, Windows service, Tray App, remote session
+
+- name: area/server
+  color: 0e8a16
+  description: ken-server crate, HTTP API, database, web UI
+
+- name: area/protocol
+  color: b60205
+  description: ken-protocol crate, wire format, schema
+
+- name: area/frontend
+  color: 5dade2
+  description: askama templates, htmx interactions, static assets
+
+- name: area/ci
+  color: cfd3d7
+  description: GitHub Actions workflows, build and release tooling
+
+- name: area/docs
+  color: 0075ca
+  description: README, ADRs, user documentation, architecture notes
+
+- name: area/installer
+  color: 8b4513
+  description: MSI, Docker image, Docker Compose, deployment assets
+
+# ─── Status ────────────────────────────────────────────────────────
+- name: status/needs-triage
+  color: ededed
+  description: New, not yet reviewed by a maintainer
+
+- name: status/needs-adr
+  color: 5319e7
+  description: Cannot proceed until an ADR is drafted or accepted
+
+- name: status/needs-discussion
+  color: fbca04
+  description: Requires community or maintainer discussion before work begins
+
+- name: status/accepted
+  color: 0e8a16
+  description: Accepted and ready for implementation
+
+- name: status/in-progress
+  color: 1d76db
+  description: Actively being worked on
+
+- name: status/blocked
+  color: d73a4a
+  description: Blocked on an external dependency or unresolved decision
+
+- name: status/wontfix
+  color: ffffff
+  description: Closed without action; see comments for the reason
+
+# ─── Priority ──────────────────────────────────────────────────────
+- name: priority/critical
+  color: b60205
+  description: Security, correctness, or trust-boundary issue; address immediately
+
+- name: priority/high
+  color: d93f0b
+  description: Should be addressed in the current phase
+
+- name: priority/medium
+  color: fbca04
+  description: Should be addressed eventually
+
+- name: priority/low
+  color: c2e0c6
+  description: Nice to have, no urgency
+
+# ─── Trust boundary ────────────────────────────────────────────────
+# These labels mark issues that touch the items in ADR-0001.
+# They exist so maintainers can quickly spot scope-boundary discussions.
+- name: trust/tier-1
+  color: 000000
+  description: Touches a Tier 1 invariant in ADR-0001; expect rejection unless mislabeled
+
+- name: trust/tier-2
+  color: 333333
+  description: Touches a Tier 2 scope boundary in ADR-0001; requires an ADR to change
+
+# ─── Community ─────────────────────────────────────────────────────
+- name: good-first-issue
+  color: 7057ff
+  description: Suitable for a first-time contributor
+
+- name: help-wanted
+  color: 008672
+  description: Maintainers would welcome community help on this one
