@@ -4,7 +4,7 @@
 //! service loop. On non-Windows platforms, it provides stub
 //! implementations so the crate compiles for cross-platform CI.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 /// The Windows service name as registered with the SCM.
@@ -42,16 +42,10 @@ pub async fn service_loop(shutdown: Arc<AtomicBool>) {
 
     tracing::info!("service loop started");
 
-    while !shutdown.load(Ordering::SeqCst) {
-        // Check the kill switch on every iteration (cheap but paranoid).
-        if crate::killswitch::is_active(&paths.kill_switch_file) {
-            tracing::warn!("kill switch activated during operation, exiting");
-            break;
-        }
-
-        // The worker loop (heartbeat, commands, IPC) will be wired here
-        // when the HTTP client and enrollment modules are complete.
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    // Run the worker loop (heartbeat, commands, status collection).
+    // The worker loop handles its own kill-switch checks internally.
+    if let Err(e) = crate::worker::main_loop::run(shutdown, &paths).await {
+        tracing::error!(error = %e, "worker loop failed");
     }
 
     tracing::info!("service loop exiting");
