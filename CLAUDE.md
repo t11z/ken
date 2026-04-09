@@ -16,7 +16,7 @@ Ken has two LLM roles, and they must never blur:
 
 **The Architect** (Claude in the Claude Project, working alongside the human owner). The Architect reasons about design, drafts ADRs, writes prompts for Claude Code, edits documentation, and answers strategic questions. The Architect does **not** write production code, does not run tests, does not commit to the repository directly.
 
-**The Implementer** (Claude Code, invoked through prompts). The Implementer reads ADRs, reads prompt files, writes Rust code, writes tests, runs builds, opens pull requests. The Implementer does **not** make architecture decisions, does **not** modify ADRs, does **not** modify any `CLAUDE.md`, and does **not** modify any file under `prompts/` or `.claude/` unless a prompt file explicitly instructs it to.
+**The Implementer** (Claude Code, receiving task descriptions from the architect). The Implementer reads ADRs, writes Rust code, writes tests, runs builds, opens pull requests. The Implementer does **not** make architecture decisions, does **not** modify ADRs, does **not** modify any `CLAUDE.md`, and does **not** modify any file under `.claude/` unless an explicit instruction from the architect authorizes it.
 
 The boundary exists because architectural drift is invisible until it is irreversible. A model that is allowed to both decide and implement will, under pressure, decide in favor of what is easy to implement. Separating the two roles forces every decision to survive a written round-trip, which is the only mechanism that reliably catches the drift.
 
@@ -28,7 +28,6 @@ Without an explicit per-file instruction from the architect, Claude Code may not
 
 - Any file in `docs/adr/`
 - Any file named `CLAUDE.md` at any depth in the tree
-- Any file in `prompts/`
 - Any file in `.claude/` (including `.claude/skills/` and `.claude/commands/`)
 - Any file in `.github/` (workflows, issue templates, labels, configuration)
 - `LICENSE`, `README.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`
@@ -44,7 +43,7 @@ Claude Code may freely create, modify, and delete:
 - Generated files, build artifacts, lockfiles
 - Files explicitly named in a prompt as the target of the work
 
-When in doubt, read the prompt file again. If the prompt does not name a file, do not modify it.
+When in doubt, re-read the task description. If it does not name a file, do not modify it.
 
 ## Repository structure
 
@@ -65,26 +64,22 @@ These are recorded in detail in their own ADRs; this section is a quick referenc
 
 ## How Claude Code should work in this repository
 
-When invoked with a prompt file:
+Claude Code receives task descriptions directly in its session from the Architect. These descriptions reference ADRs the same way and carry the same authority as any other written instruction from the Architect. The workflow is:
 
-1. **Read the prompt file completely** before doing anything else. Identify which ADRs it references and read those next.
+1. **Read the task description completely** before doing anything else. Identify which ADRs it references and read those next.
 2. **Read the relevant `CLAUDE.md`** for the crate or area being modified. Conventions in a sub-`CLAUDE.md` override or refine this root file for that subtree.
 3. **Check `.claude/skills/`** for any SKILL.md that matches the class of work. Load it before proceeding.
-4. **Plan the change in writing** as a comment or scratch note before editing files. The plan should name every file that will be touched and reference the ADR or prompt section that justifies each change.
-5. **Make the change**, then run the relevant build and test commands. Do not consider the work complete until the build passes and tests pass. If a test cannot pass for reasons outside the scope of the prompt, surface this in the pull request description rather than disabling the test.
-6. **Open a pull request** with a description that names the prompt file and the ADRs the change is built against. The PR description is the contract between implementation and intent.
+4. **Plan the change in writing** as a comment or scratch note before editing files. The plan should name every file that will be touched and reference the ADR or task section that justifies each change.
+5. **Make the change**, then run the relevant build and test commands. Do not consider the work complete until the build passes and tests pass. If a test cannot pass for reasons outside the scope of the task, surface this in the pull request description rather than disabling the test.
+6. **Open a pull request** with a description that names the ADRs the change is built against. The PR description is the contract between implementation and intent.
 7. **Do not commit to `main` directly.** All work goes through pull requests.
 
-When invoked without a prompt file, for an ad-hoc change:
-
-1. **Stop and ask** whether this work should be captured as a prompt file first. Most ad-hoc requests should become prompt files for traceability. The exceptions are trivial fixes (typos, formatting, dependency bumps) and explicit emergency changes.
-2. **For trivial fixes**, proceed and open a PR with a descriptive title.
-3. **For anything that touches behavior**, refuse politely and ask the architect to draft a prompt or to explicitly authorize an ad-hoc change.
+For trivial fixes (typos, formatting, dependency bumps), proceed directly and open a PR with a descriptive title. For anything that touches behavior without ADR backing, stop and ask the architect for guidance.
 
 ## Style, hygiene, and quality
 
 - **Rust style:** standard `rustfmt` defaults, `clippy` clean at the `warn` level, no `#[allow]` without a comment explaining why.
-- **Commit messages:** imperative present tense, first line under 72 characters, body wrapped at 72. Reference the prompt file and any ADRs in the body.
+- **Commit messages:** imperative present tense, first line under 72 characters, body wrapped at 72. Reference the relevant ADRs in the body.
 - **Tests:** every non-trivial function gets a unit test. Integration tests go in `crates/*/tests/`. No test is allowed to depend on network access, on a clock, or on a specific filesystem layout outside the test's own tempdir.
 - **Documentation:** every public item in every crate gets a doc comment. The doc comment names the ADR that justifies its existence whenever applicable.
 - **Logging:** structured logging via `tracing`. Never log user data, never log credentials, never log session content. Log Ken's own actions.

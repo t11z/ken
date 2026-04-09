@@ -87,4 +87,4 @@ The remote-session subsystem is the hardest to test end-to-end, because it invol
 - Perform any action without writing a corresponding entry to the local audit log (T1-5)
 - Survive a user-initiated kill-switch request (T1-6)
 
-If a prompt asks for any of the above, stop and surface the question before proceeding.
+If a task asks for any of the above, stop and surface the question before proceeding.

@@ -86,7 +86,7 @@ The UI is deliberately small and low-fidelity. It is not a dashboard product —
 - Issue commands to an agent that the admin did not authorize through the admin UI
 - Store user data from endpoints beyond what is required for status display (there should be very little such data in the first place; see the agent's ADR-0001 compliance)
 
-If a prompt asks you to add any of the above, stop and surface the question before proceeding.
+If a task asks you to add any of the above, stop and surface the question before proceeding.
 
 ## Dependencies
 
