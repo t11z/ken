@@ -66,6 +66,9 @@ async fn main() -> anyhow::Result<()> {
         config: Arc::new(config),
     };
 
+    // Ensure admin access token exists (generates and logs it on first run)
+    http::auth::ensure_admin_token(&state).await?;
+
     // Build routers
     let admin_app = http::admin_router(state.clone());
     let agent_app = http::agent_router(state);
