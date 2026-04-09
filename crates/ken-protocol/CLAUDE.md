@@ -1,99 +1,79 @@
-# CLAUDE.md — `ken-protocol`
+# CLAUDE.md — ken-protocol
 
-This crate defines the wire types shared between `ken-agent` and `ken-server`. It is the contract at the boundary, and like all contracts its value comes from being stable and explicit.
-
-Read the root `CLAUDE.md` first if you have not already. The rules there apply here unless this file refines them.
+This crate defines the wire types exchanged between the Ken agent and the Ken server. It is the narrowest and most stable crate in the workspace. Read the root `CLAUDE.md` first; conventions there apply here unchanged unless refined below. Read `docs/adr/0001-trust-boundaries-and-current-scope.md` before deciding what belongs on the wire.
 
 ## Purpose
 
-`ken-protocol` is a small, dependency-light crate that contains:
+`ken-protocol` is the single source of truth for the shape of data flowing across the network boundary in Ken. Every message the agent sends to the server, every command the server sends back, every enrollment exchange, every audit event that travels over the wire — all of it is defined here, once.
 
-- Message types exchanged over the agent ↔ server connection (heartbeat, status report, command, command acknowledgment, consent response)
-- Enums for endpoint state (Defender status, BitLocker state, update state, firewall profile state, etc.)
-- Versioning primitives so that agent and server can negotiate protocol compatibility
-- Serialization and deserialization via `serde`, with the wire format documented in this file
+The crate is deliberately small. It contains type definitions, serialization logic, schema version constants, and the minimum set of helpers required to produce and consume those types. It does not contain transport code, it does not contain I/O, it does not know about TLS, it does not know about HTTP. It is pure data.
 
-It does **not** contain:
+## Why this matters
 
-- Network code (no HTTP, no TLS, no socket logic)
-- Business logic (no decisions about *what* to do with a message, only *what a message looks like*)
-- Platform-specific code (no Windows APIs, no Linux APIs)
-- Persistence logic (no database types, no SQLite-specific concerns)
-
-If you find yourself wanting to add any of those things to this crate, the answer is no. Add them in `ken-agent` or `ken-server` and import the relevant `ken-protocol` types.
-
-## Why this crate exists at all
-
-Two reasons.
-
-First, the agent and the server are written in the same language and live in the same workspace, but they are deployed independently and will run different versions in production. Without a shared crate, the wire types would be duplicated, drift apart, and create silent compatibility breaks. With a shared crate, breaking the wire format produces a compile error in both binaries, which is the correct failure mode.
-
-Second, the wire format is the most important architectural surface in Ken. A future contributor who wants to understand "what does Ken actually exchange between agent and server" can read this single crate and have a complete, authoritative answer. No other crate has that property.
+The agent and the server are separate binaries with separate release cycles, deployed on different hardware, owned by different concerns. The only thing keeping them compatible is the discipline of this crate. If a field is renamed without thought, agents in the field stop reporting. If a new variant is added to an enum without a compatibility strategy, every server older than the release stops parsing. The crate is small precisely because every line of it carries operational weight.
 
 ## Conventions
 
-### Type naming
+**Everything public has a doc comment** that explains what the type represents, what it is used for, and which ADR justifies its existence. The doc comment is part of the contract, not documentation afterthought.
 
-- Messages from the agent to the server: `AgentMessage` enum with variants like `Heartbeat`, `StatusReport`, `ConsentResponse`.
-- Messages from the server to the agent: `ServerMessage` enum with variants like `RequestRemoteSession`, `RequestStatusRefresh`.
-- State enums use the form `<Subject>State`, e.g., `DefenderState`, `BitLockerState`, `UpdateState`. All variants are explicit; no `Other(String)` escape hatches without an ADR justifying them.
-- All public types derive `Debug`, `Clone`, `serde::Serialize`, `serde::Deserialize`, `PartialEq`, and `Eq` where the contained types allow it.
+**Every type that crosses the wire is `Serialize + Deserialize` via `serde`**, and every type is tested for round-trip equality. A type that serializes differently than it deserializes is a silent corruption bug waiting to happen.
 
-### Serialization
+**Schema versioning is explicit.** The crate exposes a `SCHEMA_VERSION` constant. When any wire type changes in a way that is not backward-compatible, the version is bumped and the change is recorded in an ADR. Backward-compatible changes (adding an optional field, adding a new enum variant with `#[serde(other)]` fallback) do not require a version bump but do require a test that proves old payloads still parse.
 
-The wire format is **JSON over mTLS** for now. This is documented in an ADR (placeholder ADR-0004, to be written). If a future ADR moves the format to something binary (CBOR, Protobuf, MessagePack), the change happens here, in this crate, and is invisible to the rest of the codebase.
+**Enums use `#[serde(rename_all = "snake_case")]`** by default. Variants are named in the Rust idiom (`CamelCase`) but serialized as `snake_case` for consistency with the rest of the wire format. Any deviation from this default is documented at the type definition.
 
-`serde` is the only serialization framework used. No hand-rolled `Serialize` implementations without an ADR.
+**Timestamps are `OffsetDateTime` from the `time` crate**, serialized as RFC 3339. Never use `std::time::SystemTime` for wire types — it is opaque on the wire and its serialization is platform-dependent.
 
-### Versioning
+**Identifiers are typed.** An `EndpointId` is not a `String`, it is a newtype wrapping a `String` (or `Uuid`, depending on the type). This prevents the class of bugs where an endpoint ID is passed where a session ID was expected. The cost is a few lines of boilerplate per identifier type; the benefit is that the compiler catches mix-ups before they reach the wire.
 
-Every top-level message includes a `protocol_version` field of type `ProtocolVersion`, a small struct with `major` and `minor` fields. The compatibility rule is:
+**No `Option<Vec<T>>`** — an empty vector already encodes absence. No `Option<String>` where an empty string would carry meaning — use a dedicated type or a wrapper. Types in this crate are small, and the discipline of "make illegal states unrepresentable" is worth the extra effort here.
 
-- Same `major`: agent and server must interoperate.
-- Different `major`: agent and server must refuse to interoperate, log a clear error, and surface the version mismatch in the audit log and the server UI.
+## What belongs on the wire
 
-`ProtocolVersion` is defined as a constant in this crate. Bumping it is an architectural decision and requires an ADR.
+Per ADR-0001 T1-1 and T1-2, Ken does not talk to any server outside the deployment. This means the wire types defined here travel exclusively between one agent and one server within one family IT chief's deployment. There is no central schema registry, no public compatibility contract, no external consumer to worry about. The audience is one pair of binaries owned by the same architect.
 
-### No optional fields without a default
+This gives us freedom (we can iterate on the schema without breaking third parties) and responsibility (there is no one else to catch our mistakes). Tests and schema discipline replace what an external contract would otherwise enforce.
 
-Every field in every message either is required or has an explicit `#[serde(default)]` with a documented default value. The reason: agents and servers will run mixed versions, and a missing field on one side must produce a predictable value on the other side, never a deserialization error. If a field is genuinely optional, it is `Option<T>` and the absence of value has documented semantic meaning.
+Data that must never travel on the wire, per ADR-0001:
+
+- Keystrokes or input captures (T2-3 is a current boundary but the prohibition is clear today)
+- File contents, clipboard contents, browser history (T2-2)
+- Scheduled screenshots (T2-4)
+- Any user data beyond what is strictly necessary for status reporting
+
+If a prompt asks you to add a type that would carry any of these, stop and surface the question. A current Tier 2 boundary can be loosened through an ADR, but never silently through a new type in this crate.
 
 ## Dependencies
 
-Permitted in this crate:
+This crate has **no dependencies on `ken-agent` or `ken-server`**. The dependency direction is strictly one-way: both of those depend on this crate, and this crate depends on neither. If a prompt asks you to reach back from `ken-protocol` into `ken-server` or `ken-agent`, stop and surface the question to the architect — the request likely indicates a missing abstraction.
 
-- `serde` and `serde_derive`
-- `serde_json` (only if used in this crate's own tests; production serialization happens at the call site)
-- `thiserror` for error types
-- `time` or `chrono` for timestamps (TBD by ADR; pick one and stick with it)
+External dependencies are kept minimal. Allowed by default:
 
-Forbidden in this crate without an ADR:
+- `serde` and `serde_json` for serialization
+- `time` for timestamps
+- `uuid` for identifier generation when the protocol requires it
 
-- Any crate that pulls in a runtime (`tokio`, `async-std`, `smol`)
-- Any crate with platform-specific code (`windows-rs`, `nix`, etc.)
-- Any HTTP, TLS, or network crate
-- Any database crate
+Anything beyond this set requires justification in the pull request description. Adding a dependency here has a large blast radius because both binaries inherit it.
 
-The point is that `ken-protocol` should compile in milliseconds, have minimal dependencies, and be trivially auditable. If a dependency makes either of those properties worse, it does not belong here.
+## Testing
 
-## Tests
+Every wire type has at least one round-trip test in `crates/ken-protocol/tests/`. The round-trip test:
 
-- Every message type has a round-trip serialization test: `serialize → deserialize → assert_eq` against a representative instance.
-- Every message type has a "wire format snapshot" test that asserts the exact JSON output for a known input. These snapshots live in `tests/snapshots/` and are committed. When a snapshot changes, the change is visible in the diff and must be justified in the PR description.
-- Cross-version compatibility tests: when the protocol version is bumped, the old version's snapshots must continue to deserialize correctly until the next major bump.
+1. Constructs an instance with realistic values
+2. Serializes it to JSON
+3. Deserializes it back
+4. Asserts equality with the original
 
-## What an LLM should do here
+When a type is extended, the old payload format is added as a test case that must still parse into the new type. This is the compatibility gate: if old payloads stop parsing, the change is not backward-compatible and requires a schema version bump and an ADR.
 
-When asked to add a new message type:
+Property-based testing with `proptest` is encouraged for types with non-trivial invariants, but not required.
 
-1. Identify which enum it belongs in (`AgentMessage`, `ServerMessage`, or a new enum if neither fits — but adding a new enum requires an ADR).
-2. Add the variant with full documentation, including which ADR motivates its existence.
-3. Write the round-trip test and the snapshot test.
-4. Update the relevant `CLAUDE.md` in the agent and server crates if the new message changes how they should behave.
-5. Open a PR that names the prompt file and the relevant ADR.
+## What this crate does not contain
 
-When asked to change an existing message type:
+- Network code (HTTP clients, TCP sockets, TLS setup) — lives in `ken-agent` and `ken-server`
+- Database code (SQL, migrations, connection pools) — lives in `ken-server`
+- Business logic (consent decisions, alerting rules, session lifecycle) — lives in `ken-agent` and `ken-server`
+- Windows-specific code — lives in `ken-agent`
+- Server configuration loading — lives in `ken-server`
 
-1. **Stop.** Changing an existing wire type is a compatibility-breaking change. Unless the change is purely additive (new optional field with a documented default), this requires an ADR and a protocol version bump.
-2. If the change is additive, proceed with the same steps as above.
-3. If it is not additive, refuse and ask the architect to draft an ADR.
+If a prompt asks you to add any of the above to this crate, stop and verify the prompt. The crate is kept small on purpose.
