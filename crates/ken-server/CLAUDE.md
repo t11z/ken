@@ -1,138 +1,101 @@
-# CLAUDE.md — `ken-server`
+# CLAUDE.md — ken-server
 
-This crate is the server side of Ken. It runs on Linux (primary target: ARM64 for Raspberry Pi, also x86_64 for development), packaged as a Docker image, deployed via Docker Compose. It is the home of the family IT chief — the place where they see their endpoints, trigger remote sessions, and manage updates.
+This crate is the Ken backend. It runs on the family IT chief's Raspberry Pi (or any small Linux box), packaged as a Docker image, deployed via Docker Compose. It is the home of the family IT chief — the place where they see their endpoints, trigger remote sessions, and manage updates.
 
-Read the root `CLAUDE.md` and ADR-0001 first. The server is less security-critical than the agent in absolute terms (it does not run on user machines), but it is the repository of trust for the entire deployment, and a compromised server compromises every endpoint that talks to it.
+Read the root `CLAUDE.md` and `docs/adr/0001-trust-boundaries-and-current-scope.md` first. The server is less privileged than the agent in absolute terms (it does not run on user machines), but it is the repository of trust for the entire deployment, and a compromised server compromises every endpoint that talks to it.
 
-## What this binary is
+## Purpose
 
-A single Rust executable that serves three things from one process:
+The server has five responsibilities and no others:
 
-1. **The mTLS endpoint for agents.** Agents connect, authenticate via client certificate, send heartbeats and status reports, receive commands.
-2. **The web UI for the family IT chief.** Server-rendered HTML via askama templates, htmx for interactivity, Tailwind via static asset. The UI is reachable on the home network only by default; exposing it to the internet is the family IT chief's explicit decision.
-3. **The signaling relay for remote sessions.** Embedded `hbbs`/`hbbr` functionality so that there is one process to deploy, not three. (This is a Phase 1 simplification; if it turns out to be the wrong call, an ADR can split the relay into a separate binary later.)
+1. **Agent enrollment and authentication.** The family IT chief explicitly admits a new endpoint. The server issues the mTLS certificate the agent uses for all subsequent communication. There is no auto-enrollment (T2-7), no self-service onboarding, no open registration.
 
-The whole thing is one statically linked binary, packaged in a `FROM scratch` or `distroless` Docker image, with a typical memory footprint under 100 MB on a Raspberry Pi.
+2. **Status aggregation.** Agents report heartbeats and status. The server persists the latest state per endpoint and a short history of status changes. This is the source of the web UI.
 
-## Component layout
+3. **Command routing.** The family IT chief, through the web UI, requests actions on an endpoint (today: a remote-control session request). The server routes the command to the target agent over the existing mTLS channel. The server does not decide *whether* the command is legitimate — that is the admin's authority — but it does enforce that commands only go to enrolled endpoints and only in response to an authenticated admin request.
 
-```
-src/
-├── main.rs                 entry point, config loading, top-level wiring
-├── config.rs               server configuration loading and validation
-├── lib.rs                  shared library types
-├── api/                    mTLS endpoint for agents
-│   ├── mod.rs
-│   ├── auth.rs             client certificate verification
-│   ├── enrollment.rs       agent enrollment / pairing
-│   ├── ingest.rs           heartbeat and status report handling
-│   └── command.rs          command queue, dispatch to connected agents
-├── web/                    family IT chief web UI
-│   ├── mod.rs
-│   ├── routes.rs           axum routes
-│   ├── auth.rs             admin authentication (TBD by ADR)
-│   ├── templates.rs        askama template glue
-│   └── handlers/
-│       ├── dashboard.rs
-│       ├── endpoints.rs
-│       ├── audit.rs
-│       └── settings.rs
-├── relay/                  embedded signaling for remote sessions
-│   ├── mod.rs
-│   ├── hbbs.rs             rendezvous server logic
-│   └── hbbr.rs             relay server logic
-├── storage/                SQLite persistence
-│   ├── mod.rs
-│   ├── schema.rs           sqlx migrations
-│   ├── endpoints.rs        endpoint records
-│   ├── status.rs           latest known status per endpoint
-│   ├── audit.rs            server-side audit log
-│   └── commands.rs         queued commands awaiting agent pickup
-├── tls/
-│   ├── mod.rs
-│   ├── ca.rs               local CA for issuing agent certs
-│   └── server.rs           server cert handling
-└── templates/              askama templates (.html files)
-    ├── base.html
-    ├── dashboard.html
-    ├── endpoints/
-    └── ...
-```
+4. **Web UI.** Server-rendered HTML via askama templates, htmx for interactivity, no build pipeline, no JavaScript framework. The UI is small and deliberately modest: an endpoint list, an endpoint detail view, an enrollment flow, a session-initiation button, an audit view.
+
+5. **MSI release hosting.** The server hosts the signed Ken agent MSI for distribution. Agents check this endpoint for updates and pull new versions from it. The family IT chief places a new MSI here by copying it into a known directory (or, later, via an admin-initiated upload).
+
+Everything else — alerting, dashboards, analytics, multi-tenancy, external integrations — is either out of scope today (Tier 2) or permanently forbidden (Tier 1).
+
+## Target platform
+
+The primary deployment target is **ARM64 Linux** (Raspberry Pi 4 or 5 running a recent Debian or Ubuntu). The development target is **x86_64 Linux** so that contributors can run and test the server on a regular development machine. Both targets build from the same source via cross-compilation; no platform-specific source files.
+
+Memory and CPU footprint matter. The server should idle comfortably under 100 MB of RAM and should start in under two seconds on a Pi. Avoid dependencies that pull in heavy runtimes or large build-time machinery. If a dependency inflates the binary significantly, the pull request should explain why it is worth the cost.
+
+Docker image is the primary distribution format. The image is built from `scratch` or `distroless` where possible — the server is a single static binary with a few configuration files, nothing more. The image size target is under 25 MB.
+
+## Stack
+
+- **`axum`** as the web framework. Middleware via `tower-http`. Routing is kept flat and explicit; no clever macros, no derive-heavy route definitions.
+- **`sqlx`** with **SQLite** for persistence. Compile-time query checking is enabled. Migrations live in `crates/ken-server/migrations/` and are applied at server startup.
+- **`rustls`** for TLS. No dependency on OpenSSL or any C-based TLS library.
+- **`askama`** for HTML templates. Templates live in `crates/ken-server/templates/` and are compiled into the binary.
+- **`htmx`** delivered as a static asset from `crates/ken-server/static/htmx.min.js`. The file is committed, not fetched at build time.
+- **`tailwindcss`** delivered as a pre-built static asset, not generated by a build pipeline. A full Tailwind CSS file is committed to `crates/ken-server/static/` and served directly.
+- **`tracing`** for structured logging.
+- **`tokio`** as the async runtime.
+
+Any deviation from this list requires an ADR.
+
+## mTLS and certificate management
+
+The server is the certificate authority for its own deployment. On first start, it generates a root CA and stores the key in a configured data directory with strict file permissions. Every enrolled endpoint gets a certificate signed by this CA. Agents authenticate to the server with their certificate; the server authenticates to agents with a certificate signed by the same CA.
+
+The admin web UI is protected by a separate authentication mechanism (initially a long random token generated at first start and displayed once in the server logs, per a future ADR). The admin UI does not use client certificates.
+
+Certificate lifecycle operations — issuance, revocation, rotation — are server responsibilities. The server exposes these through the admin UI, not through the agent-facing API. An agent cannot request its own reissuance; it can only use the certificate it was given at enrollment time.
+
+## Database
+
+SQLite, single file, stored in the configured data directory. Schema migrations are applied at startup via `sqlx migrate`. The schema is small and documented:
+
+- `endpoints` — one row per enrolled agent
+- `heartbeats` — recent heartbeat entries, pruned after a configurable retention window
+- `status_snapshots` — latest OS state per endpoint
+- `commands` — pending and historical commands with outcomes
+- `audit_events` — server-side audit log, separate from and complementary to the agent-side audit log
+- `admin_sessions` — authenticated admin web sessions
+
+Every query goes through `sqlx` with compile-time checking. Raw SQL at runtime is not acceptable. Migrations are additive where possible; schema changes that drop or rename columns require an ADR because they affect upgrade paths.
 
 ## Frontend conventions
 
-The frontend lives inside this crate. It is not a separate npm project, and it must never become one. Specifically:
+The UI is deliberately small and low-fidelity. It is not a dashboard product — it is an operator console for a handful of endpoints, used by one person.
 
-- **Templates:** askama templates in `src/templates/`. They compile into the binary. There is no template hot-reload in production.
-- **Interactivity:** htmx attributes on HTML elements. No client-side JavaScript framework. No build step.
-- **Styling:** Tailwind, served as a single precompiled CSS file from `static/tailwind.css`. The CSS file is generated by a one-shot Tailwind CLI run during the build, *not* by a watcher or a Node-based pipeline. The generated CSS is committed to the repository so that builds do not require Node.
-- **Static assets:** images, fonts, and the precompiled CSS live under `static/` and are served directly by axum.
-- **No JavaScript bundler.** No webpack, no vite, no esbuild. If a feature requires JavaScript beyond what htmx provides, write the JavaScript by hand as a small file under `static/js/` and link it.
+**Templates are server-rendered askama templates.** No JavaScript framework. No bundler. No compilation step outside of `cargo build`.
 
-A separate `web/CLAUDE.md` does not exist for now. The frontend conventions are part of this file because the frontend is part of this crate. If the frontend grows enough to deserve its own conventions document, an ADR will authorize splitting it out.
+**htmx handles interactivity.** Partial updates, form submissions, and dynamic content happen through `hx-get`, `hx-post`, and `hx-swap`. The server returns HTML fragments, not JSON.
 
-## Hard rules for code in this crate
+**Tailwind utility classes are used directly in templates.** The Tailwind CSS file served to the browser is a pre-built bundle, not generated per-request.
 
-These are the server-side restatements of ADR-0001. They are binding.
+**One page per concern.** An endpoint list page, an endpoint detail page, an enrollment page, a session request page. No single-page-application shell.
 
-1. **No code may forward agent data to any external system by default.** A future ADR may define an opt-in webhook mechanism, but the default behavior is that data lives in the local SQLite database and goes nowhere else.
+**No client-side state beyond what htmx manages.** If the UI needs to remember something across page loads, it goes in the database or in a signed cookie.
 
-2. **No code may accept enrollment from an unknown agent without an explicit, manual admission step by the family IT chief.** Enrollment is always: admin clicks "create new endpoint" in the UI → server generates a one-time enrollment token → admin gives the token to the user → user runs the installer with the token. Auto-discovery is forbidden.
+## What the server must not do
 
-3. **No code may implement multi-tenant separation as a feature.** There is no `tenant_id` column anywhere. There is no tenant-scoped query layer. One deployment, one tenant, enforced by absence of the alternative. If a future ADR ever justifies multi-tenant support, this rule is lifted by that ADR explicitly and a migration is written. Until then: not even latent multi-tenant code.
+- Aggregate, export, or forward data to any system outside the deployment (ADR-0001 T2-6)
+- Accept agent connections from unenrolled endpoints (T1-2, T2-7)
+- Run in multi-tenant mode (T1-3)
+- Phone home to any project-maintainer service (T1-1)
+- Operate as a component of any centrally hosted Ken service (T1-2)
+- Issue commands to an agent that the admin did not authorize through the admin UI
+- Store user data from endpoints beyond what is required for status display (there should be very little such data in the first place; see the agent's ADR-0001 compliance)
 
-4. **No code may store or log user-identifiable data beyond what is required to identify endpoints.** Endpoints are identified by a hostname, an enrollment timestamp, and an admin-assigned label. We do not store usernames, file paths, browser histories, or any data the agent does not explicitly send.
-
-5. **No code may expose the admin UI to unauthenticated visitors.** Admin authentication is required on every route except the agent mTLS endpoints (which use client certificates) and a single static `/health` endpoint for monitoring.
-
-6. **No code may issue commands to agents that ADR-0001 forbids.** The command set is closed: it is exactly the variants of `ServerMessage` defined in `ken-protocol`, and adding a new variant requires an ADR.
-
-## Storage
-
-- **Database:** SQLite, accessed via `sqlx`. Migrations live in `src/storage/schema.rs` and are applied at startup.
-- **Schema discipline:** every table has a documented purpose. Every migration is forward-only — no rollback scripts. If a migration is wrong, it is fixed by a new migration.
-- **Backups:** not yet implemented. A backup story will be the subject of a future ADR. For now, the family IT chief is expected to back up the SQLite file themselves. This is documented in the user-facing README.
+If a prompt asks you to add any of the above, stop and surface the question before proceeding.
 
 ## Dependencies
 
-Permitted by default:
+Core dependencies are listed under "Stack" above. Adding a new external dependency requires justification in the pull request description, especially if it inflates binary size or pulls in build-time machinery. The server is meant to stay small and auditable.
 
-- `ken-protocol`
-- `axum` for HTTP routing
-- `tokio` (full features acceptable here, unlike the agent)
-- `sqlx` with `sqlite` and `runtime-tokio-rustls` features
-- `rustls` and `tokio-rustls`
-- `askama` and `askama_axum`
-- `serde`, `serde_json`
-- `thiserror`, `anyhow`
-- `tracing`, `tracing-subscriber`
-- `clap` for command-line config
-- `rcgen` or similar for the local CA implementation
-- The RustDesk relay crates needed for the embedded signaling functionality (specific list pinned in an ADR)
+## Testing
 
-Anything else requires an ADR. Adding analytics, telemetry, third-party error reporting, or any external SaaS dependency is a hard no.
+Unit tests live in `src/` alongside the code. Integration tests live in `crates/ken-server/tests/` and exercise the HTTP API with a real in-memory SQLite database and a mocked agent.
 
-## Tests
+Tests must not depend on network access, on a specific port being free, or on a specific clock. Use `tokio::time::pause` for time-sensitive tests. Use ephemeral ports (`0.0.0.0:0`) for tests that start the server.
 
-- Integration tests in `tests/` exercise full HTTP flows against a test server with an in-memory SQLite database.
-- mTLS tests use ephemeral certs generated at test time.
-- Web UI tests use HTTP-level assertions against rendered HTML, not browser automation. If something genuinely needs browser-level testing, that is an ADR conversation.
-- No test in this crate may require network access to external hosts.
-
-## Build targets
-
-Primary: `aarch64-unknown-linux-musl` (Raspberry Pi). Secondary: `x86_64-unknown-linux-musl` (development, x86 home servers). musl is the default because it produces a fully static binary suitable for `FROM scratch` containers.
-
-CI builds for both targets on every PR. Release builds produce both binaries plus a multi-arch Docker image.
-
-## What an LLM should do here
-
-When given a prompt that touches this crate:
-
-1. Read this file. Read the relevant ADR. Read `ken-protocol`'s `CLAUDE.md` if the change involves wire types.
-2. Identify which module the change belongs in. If the change spans multiple modules, plan the minimum set of touch points.
-3. Write the code. Build for `x86_64-unknown-linux-musl` locally to verify it compiles. Run tests.
-4. If the change modifies the database schema, write the migration in `src/storage/schema.rs` and document it in the PR.
-5. If the change adds a new HTTP route, add it to `src/web/routes.rs` and add at least one integration test.
-6. If the change touches the relay subsystem, treat it as security-sensitive: the relay handles raw session traffic, and bugs there have privacy implications.
-7. Open a PR that names the prompt file and the ADRs the change is built against.
+End-to-end tests that run the full server with a mock agent are valuable but slow; they live in a separate test target and are run in CI but not on every local invocation.
