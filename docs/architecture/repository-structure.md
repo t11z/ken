@@ -1,155 +1,120 @@
 # Repository Structure
 
-This document is a snapshot of Ken's intended directory layout. It is a reference for human contributors and LLMs alike. The tree shows where things go; the `CLAUDE.md` files at each level explain *why* things go there and what conventions apply.
+This document describes how the Ken repository is laid out and what belongs where. It exists because a tree alone does not tell you *why* a directory exists or what the rules for it are, and because conventions spread across many README files rot faster than conventions in one place.
 
-If the actual repo deviates from this tree, one of them is wrong. Open an issue.
+This file is the single source of truth for repository layout. If you are about to add a top-level directory, a new crate, or a new class of document, it is recorded here first. If you are unsure where something belongs, the answer is here or it does not yet have a place.
+
+## The tree
 
 ```
 ken/
-│
-├── Cargo.toml                          Cargo workspace root
-├── Cargo.lock                          committed (binary project, not a library)
-├── rust-toolchain.toml                 pinned Rust version
-├── .gitignore
-├── .editorconfig
-│
-├── CLAUDE.md                           root rules of engagement (immutable to Claude Code)
-├── README.md                           user-facing project description with emoji anchors
-├── CONTRIBUTING.md                     how to contribute, with the upstream-thanks section
-├── CODE_OF_CONDUCT.md                  standard community code of conduct
-├── LICENSE                             AGPL-3.0
-├── SECURITY.md                         responsible disclosure policy
-│
+├── .claude/
+│   ├── skills/
+│   └── commands/
+├── .github/
+│   ├── workflows/
+│   ├── ISSUE_TEMPLATE/
+│   └── labels.yml
 ├── crates/
 │   ├── ken-protocol/
-│   │   ├── CLAUDE.md
-│   │   ├── Cargo.toml
-│   │   ├── src/
-│   │   │   ├── lib.rs
-│   │   │   ├── messages.rs
-│   │   │   ├── state.rs
-│   │   │   └── version.rs
-│   │   └── tests/
-│   │       ├── roundtrip.rs
-│   │       └── snapshots/
-│   │
 │   ├── ken-agent/
-│   │   ├── CLAUDE.md
-│   │   ├── Cargo.toml
-│   │   ├── build.rs                    embeds version info, manifest
-│   │   ├── src/
-│   │   │   ├── lib.rs
-│   │   │   ├── bin/
-│   │   │   │   ├── svc.rs
-│   │   │   │   └── tray.rs
-│   │   │   ├── service/
-│   │   │   ├── tray/
-│   │   │   ├── ipc/
-│   │   │   ├── windows_state/
-│   │   │   ├── session/
-│   │   │   ├── audit/
-│   │   │   └── updater/
-│   │   ├── tests/
-│   │   │   ├── consent_enforcement.rs
-│   │   │   └── ipc_roundtrip.rs
-│   │   └── installer/
-│   │       └── ken.wxs                 WiX MSI definition (Phase 1.5+)
-│   │
 │   └── ken-server/
-│       ├── CLAUDE.md
-│       ├── Cargo.toml
-│       ├── src/
-│       │   ├── main.rs
-│       │   ├── lib.rs
-│       │   ├── config.rs
-│       │   ├── api/
-│       │   ├── web/
-│       │   ├── relay/
-│       │   ├── storage/
-│       │   ├── tls/
-│       │   └── templates/              .html files compiled by askama
-│       ├── static/
-│       │   ├── tailwind.css            precompiled, committed
-│       │   ├── htmx.min.js             vendored
-│       │   └── img/
-│       ├── tests/
-│       │   ├── api_integration.rs
-│       │   ├── web_routes.rs
-│       │   └── enrollment_flow.rs
-│       └── docker/
-│           ├── Dockerfile
-│           └── compose.yml             reference deployment
-│
 ├── docs/
-│   ├── adr/                            Architecture Decision Records
-│   │   ├── 0000-adr-format-and-lifecycle.md
-│   │   ├── 0001-what-ken-will-never-do.md
-│   │   └── ...                         future ADRs
-│   │
+│   ├── adr/
 │   ├── architecture/
-│   │   ├── overview.md                 high-level architecture narrative
-│   │   ├── repository-structure.md     this file
-│   │   ├── diagrams/                   excalidraw exports, mermaid sources
-│   │   └── threat-model.md             documented threat model
-│   │
 │   └── user/
-│       ├── install.md                  family IT chief install guide
-│       ├── enrollment.md               adding endpoints
-│       ├── consent.md                  what the consent dialog means
-│       ├── audit-log.md                how to read your local audit log
-│       └── uninstall.md                how to remove Ken cleanly
-│
-├── prompts/                            Claude Code prompt files
-│   ├── README.md                       how prompts are organized
-│   ├── phase-1/
-│   │   ├── 001-bootstrap-workspace.md
-│   │   ├── 002-protocol-skeleton.md
-│   │   ├── 003-server-hello-world.md
-│   │   └── ...
-│   └── archive/                        completed prompts kept for reference
-│
-├── skills/                             in-repo Claude Code skills
-│   ├── README.md                       skill index
-│   ├── adr-writing/
-│   │   └── SKILL.md
-│   ├── rust-windows-service/
-│   │   └── SKILL.md
-│   ├── htmx-askama-patterns/
-│   │   └── SKILL.md
-│   ├── cargo-workspace-hygiene/
-│   │   └── SKILL.md
-│   ├── mtls-setup/
-│   │   └── SKILL.md
-│   └── rustdesk-crate-integration/
-│       └── SKILL.md
-│
-└── .github/
-    ├── workflows/
-    │   ├── ci.yml                      build, test, lint on every PR
-    │   ├── release.yml                 cuts releases on tag push
-    │   ├── pages.yml                   builds and publishes the GitHub Pages site
-    │   └── labels.yml                  syncs labels from labels config
-    ├── ISSUE_TEMPLATE/
-    │   ├── bug_report.md
-    │   ├── feature_request.md          (filtered through ADR-0001)
-    │   ├── security_report.md          points at SECURITY.md
-    │   └── config.yml
-    ├── PULL_REQUEST_TEMPLATE.md
-    ├── labels.yml                      label definitions
-    ├── CODEOWNERS
-    └── dependabot.yml                  Cargo dependency updates
+├── prompts/
+├── CLAUDE.md
+├── CONTRIBUTING.md
+├── Cargo.toml
+├── LICENSE
+├── README.md
+└── rust-toolchain.toml
 ```
 
-## Notes on placement decisions
+## Top-level directories
 
-A few choices in this tree are worth flagging because they were not obvious.
+### `.claude/`
 
-**`ken-server/static/` is committed, including the Tailwind CSS file.** This is deliberate. Committing the precompiled CSS means the build does not need Node.js or any JavaScript tooling. The Tailwind regeneration is documented as a developer task in the server crate's `CLAUDE.md`, run on demand when templates change in ways that introduce new utility classes. This trades a bit of friction during template edits for a much simpler build pipeline and a cleaner contribution story.
+Tooling configuration for Claude Code. This directory follows the dotfile convention for tool-specific metadata — the same category as `.github/`, `.vscode/`, `.devcontainer/`. Nothing here is part of the Ken product; everything here exists to configure how Claude Code operates on the repository.
 
-**`ken-server/src/templates/` lives inside `src/` rather than alongside it.** This is so that askama can find them via the standard `template = "..."` derive without path acrobatics. The templates are compiled into the binary, so they are source code in every meaningful sense.
+`.claude/skills/` contains project-specific SKILL.md files. Skills are lightweight, living reference documents that Claude Code loads before working on a particular class of task. They encode conventions and patterns that would otherwise have to be rediscovered on every prompt. Unlike ADRs, skills are not immutable — they evolve as the project's working style evolves.
 
-**`docs/architecture/diagrams/` holds Excalidraw exports.** The architecture diagrams developed in the Claude Project sparring sessions are exported as `.excalidraw` JSON and as PNG, both committed. The PNG is what GitHub renders inline; the JSON is what someone re-edits.
+`.claude/commands/` contains slash commands for recurring workflows (drafting a new ADR, generating a phase-status report, scaffolding a new crate). This directory may be empty early in the project and fill up as patterns emerge.
 
-**`prompts/archive/`.** Completed prompt files are not deleted. They are moved to the archive subdirectory and remain in git history. This preserves the trail of "what Claude Code was actually asked to do" alongside the trail of "what was committed."
+Claude Code may read anything under `.claude/`. Claude Code may not modify anything under `.claude/` without an explicit, per-file instruction from the architect.
 
-**No top-level `tests/` directory.** Testing lives inside each crate's own `tests/` directory. There is no workspace-level integration test suite right now. If one becomes necessary, it gets its own crate (`ken-e2e` or similar), authorized by ADR.
+### `.github/`
+
+GitHub-specific configuration. Workflows for CI, release, and GitHub Pages builds live in `.github/workflows/`. Issue templates live in `.github/ISSUE_TEMPLATE/`. Repository labels are defined declaratively in `.github/labels.yml` and applied by a workflow, so that label drift on the GitHub side can always be reconciled against the file in the repo.
+
+This directory is off-limits to Claude Code without explicit instruction. Changes to CI or release machinery are architectural decisions, not implementation details.
+
+### `crates/`
+
+The Cargo workspace members. Each subdirectory is one crate with its own `Cargo.toml`, `src/`, and typically `tests/`.
+
+`ken-protocol` is the shared crate that defines the wire types flowing between agent and server. It is depended on by both `ken-agent` and `ken-server` and has no dependencies on either. It is intentionally small and stable — changes here ripple across every component, so they happen through ADRs, not ad-hoc edits.
+
+`ken-agent` is the Windows-only binary that runs on endpoint machines. It contains the SYSTEM service, the user-mode Tray App, the Named Pipe IPC between them, the embedded remote-session subsystem (built on RustDesk crates), and the local audit log. It is the only component of Ken that runs on user machines and the only one with elevated privileges.
+
+`ken-server` is the Linux binary that runs on the family IT chief's Raspberry Pi. It contains the HTTP server, the SQLite persistence layer, the mTLS termination, the askama-rendered web UI, and the signaling relay for remote sessions. It builds for both ARM64 (the target) and x86_64 (for development on a regular machine).
+
+Each crate has its own `CLAUDE.md` at its root with crate-specific conventions that refine or extend the root `CLAUDE.md`.
+
+### `docs/`
+
+All project documentation that is not code and not tooling configuration. Split into three subdirectories with distinct lifecycles and audiences.
+
+`docs/adr/` holds the Architecture Decision Records. Each ADR is immutable once accepted, named `NNNN-kebab-case-title.md`, and governed by ADR-0000. These are the project's memory and its primary defense against drift. They are the first thing any contributor — human or LLM — should read.
+
+`docs/architecture/` holds longer-form design documents that do not fit the ADR format: diagrams, protocol specifications, threat models, sequence flows. Unlike ADRs, these documents can be updated in place as the project evolves. They describe *what is*, not *what was decided*.
+
+`docs/user/` holds end-user documentation: installation guides, the consent model explainer, the audit log reader's guide, troubleshooting notes. This is the material that gets rendered to GitHub Pages for the project website, and it is written for family IT chiefs and their users, not for developers.
+
+### `prompts/`
+
+Claude Code prompt files, organized by phase and area. Each prompt is a self-contained markdown file that instructs Claude Code to perform a specific, bounded piece of work. Prompts reference ADRs by number, name the files they are allowed to touch, and describe acceptance criteria.
+
+Prompts are off-limits to Claude Code itself without an explicit instruction — Claude Code executes prompts, it does not author them. The architect writes prompts in the Claude Project and commits them here before Claude Code runs against them.
+
+Early in the project, prompts are organized flat (`prompts/0001-scaffold-workspace.md`, `prompts/0002-ken-protocol-initial-types.md`). As the project grows, they may be grouped by phase (`prompts/phase-1/`, `prompts/phase-2/`). The exact organization is not a load-bearing decision and can be reshuffled.
+
+## Top-level files
+
+`CLAUDE.md` is the root entry point for any LLM working in this repository. It defines the Architect/Implementer role separation, the list of files Claude Code may not modify, and the high-level conventions that apply to the whole workspace. Sub-`CLAUDE.md` files in individual crates refine but do not override the root.
+
+`Cargo.toml` is the workspace root manifest. It lists members, defines shared dependencies via `[workspace.dependencies]`, and pins shared lints via `[workspace.lints]`. Claude Code may not modify the workspace root `Cargo.toml` without explicit instruction, because adding or removing a workspace member is an architectural change.
+
+`rust-toolchain.toml` pins the Rust toolchain version for the entire workspace. Updates to this file require an ADR, because toolchain bumps can introduce behavior changes across the codebase.
+
+`README.md` is the project's public face on GitHub and the source of the GitHub Pages landing. It is written for people encountering Ken for the first time and is deliberately short: what Ken is, what it is not, how to try it, where to read more.
+
+`CONTRIBUTING.md` describes how external contributors engage with the project: how to file issues, how to propose ADR changes, what the PR review process looks like, and what the project will and will not accept. It references ADR-0001 for the scope boundaries.
+
+`LICENSE` is AGPL-3.0 and is non-negotiable per ADR-0001.
+
+## Conventions that apply to the whole tree
+
+**Filenames are kebab-case.** `trust-boundaries-and-current-scope.md`, not `TrustBoundariesAndCurrentScope.md` or `trust_boundaries.md`. This applies to documentation, prompts, and assets. Rust source files follow Rust conventions (`snake_case.rs`), which is the only exception.
+
+**Markdown files do not have YAML frontmatter** unless required by a specific tool (e.g., Jekyll for GitHub Pages). ADRs use the metadata block format defined in ADR-0000, which is plain markdown, not frontmatter.
+
+**Diagrams live next to the document that references them**, under `docs/architecture/diagrams/` if they stand alone, or inline as a sibling file if they belong to a specific ADR. Diagram source files (Excalidraw JSON, Mermaid source) are committed alongside any rendered exports.
+
+**Generated files are not committed.** Build artifacts, target directories, and rendered documentation go through `.gitignore`. The only exception is rendered diagrams where the rendering step is not part of CI.
+
+**No file in this repository is allowed to claim it is the index of something else.** There are no `INDEX.md` files, no `TABLE_OF_CONTENTS.md` files, no `FILES.md` files. Directory listings are authoritative; any file that attempts to duplicate a directory listing will drift from reality and mislead future readers. This document is the exception that proves the rule — it describes the tree's *meaning*, not its contents, and it is small enough to be audited at a glance.
+
+## Where to put new things
+
+- A new architecture decision → a new ADR under `docs/adr/`
+- A new design doc that is not a decision → `docs/architecture/`
+- A new end-user-facing document → `docs/user/`
+- A new prompt for Claude Code → `prompts/`
+- A new skill for Claude Code → `.claude/skills/`
+- A new slash command for Claude Code → `.claude/commands/`
+- A new crate → `crates/`, and update the workspace `Cargo.toml` through an ADR-authorized prompt
+- A new CI workflow → `.github/workflows/`, via an explicit architect instruction
+- A new issue template → `.github/ISSUE_TEMPLATE/`, via an explicit architect instruction
+- Something that does not fit any of the above → stop and ask; the answer is either "add it to this document first" or "you are trying to add something that does not belong in this repository"
