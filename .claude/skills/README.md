@@ -41,7 +41,7 @@ A skill file has a short opening paragraph explaining what it covers and when to
 
 ## When Claude Code should load a skill
 
-Claude Code should load a skill when the current task matches the skill's stated scope. The decision is made from the prompt file: if the prompt says "implement the enrollment endpoint," the relevant skills are `axum-askama-htmx`, `mtls-with-rustls`, and `rust-workspace-hygiene`. Load them, then proceed.
+Claude Code should load a skill when the current task matches the skill's stated scope. The decision is made from the task description: if the task says "implement the enrollment endpoint," the relevant skills are `axum-askama-htmx`, `mtls-with-rustls`, and `rust-workspace-hygiene`. Load them, then proceed.
 
 If no existing skill matches the task, Claude Code proceeds without one. It does not invent a skill mid-task. If the task reveals a pattern that would benefit from a skill, Claude Code surfaces this in the pull request description so the architect can decide whether to add one.
 
