@@ -27,7 +27,6 @@ rustls = { workspace = true }
 ctrlc = "3"
 
 [target.'cfg(windows)'.dependencies]
-windows = { workspace = true }
 windows-service = { workspace = true }
 
 [dev-dependencies]
