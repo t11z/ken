@@ -1,0 +1,99 @@
+name: pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'README.md'
+      - 'docs/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: build site
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: set up mdBook
+        uses: peaceiris/actions-mdbook@v2
+        with:
+          mdbook-version: latest
+
+      - name: prepare site source
+        run: |
+          mkdir -p site/src
+
+          # Use the README as the site index, with a minimal rewrite to
+          # resolve relative links that point into the repo.
+          cp README.md site/src/README.md
+
+          # Copy documentation sections into the book layout.
+          cp -r docs site/src/docs
+
+          # Generate a minimal SUMMARY.md that lists the visible sections.
+          # The book layout is intentionally small: landing page, ADRs,
+          # architecture, user docs. Contributors can expand it through
+          # normal PRs when new documentation lands.
+          cat > site/src/SUMMARY.md <<'EOF'
+          # Summary
+
+          [Ken](README.md)
+
+          # Architecture Decision Records
+
+          - [ADR-0000: ADR Format and Lifecycle](docs/adr/0000-adr-format-and-lifecycle.md)
+          - [ADR-0001: Trust Boundaries and Current Scope](docs/adr/0001-trust-boundaries-and-current-scope.md)
+
+          # Architecture
+
+          - [Repository Structure](docs/repository-structure.md)
+
+          # For Users
+
+          EOF
+
+          cat > site/book.toml <<'EOF'
+          [book]
+          title = "Ken"
+          authors = ["The Ken contributors"]
+          language = "en"
+          multilingual = false
+          src = "src"
+
+          [output.html]
+          default-theme = "light"
+          preferred-dark-theme = "navy"
+          git-repository-url = "https://github.com/t11z/ken"
+          edit-url-template = "https://github.com/t11z/ken/edit/main/{path}"
+          EOF
+
+      - name: build book
+        run: mdbook build site
+
+      - name: upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site/book
+
+  deploy:
+    name: deploy to Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

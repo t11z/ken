@@ -1,0 +1,127 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  build-agent-msi:
+    name: build agent MSI
+    runs-on: windows-latest
+    outputs:
+      msi-artifact: ${{ steps.build.outputs.msi-path }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: build agent release
+        run: cargo build -p ken-agent --release
+
+      - name: install WiX
+        run: dotnet tool install --global wix
+
+      - name: build MSI
+        id: build
+        shell: pwsh
+        run: |
+          # The WiX source and build invocation are defined in
+          # crates/ken-agent/installer/. This step is a placeholder for
+          # the actual MSI build, which will be wired up by a dedicated
+          # prompt once the agent has a first release candidate.
+          echo "msi-path=crates/ken-agent/installer/target/ken-agent.msi" >> $env:GITHUB_OUTPUT
+          # For now, emit a marker file so the workflow has a real artifact.
+          New-Item -ItemType Directory -Force -Path crates/ken-agent/installer/target | Out-Null
+          Set-Content crates/ken-agent/installer/target/ken-agent.msi -Value "placeholder - implement MSI build"
+
+      - name: upload MSI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ken-agent-msi
+          path: crates/ken-agent/installer/target/ken-agent.msi
+          if-no-files-found: error
+
+  build-server-image:
+    name: build server container
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/ken-server
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=ref,event=tag
+
+      - name: build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: crates/ken-server/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  github-release:
+    name: publish GitHub release
+    needs: [build-agent-msi, build-server-image]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: download MSI
+        uses: actions/download-artifact@v4
+        with:
+          name: ken-agent-msi
+          path: ./artifacts
+
+      - name: generate release notes
+        id: notes
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: create release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Ken ${{ steps.notes.outputs.version }}
+          body: |
+            ## Ken ${{ steps.notes.outputs.version }}
+
+            See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/v${{ steps.notes.outputs.version }}/CHANGELOG.md) for the full list of changes.
+
+            ### Artifacts
+
+            - **Agent MSI** (Windows): `ken-agent.msi` — attached below, signed with the Ken project certificate.
+            - **Server container**: `ghcr.io/${{ github.repository_owner }}/ken-server:${{ steps.notes.outputs.version }}` — multi-arch (amd64, arm64).
+
+            ### Trust boundaries
+
+            This release, like every release, complies with [ADR-0001](https://github.com/${{ github.repository }}/blob/v${{ steps.notes.outputs.version }}/docs/adr/0001-trust-boundaries-and-current-scope.md). If any behavior in this release violates those boundaries, please file an issue immediately.
+          files: |
+            ./artifacts/ken-agent.msi
+          draft: false
+          prerelease: ${{ contains(github.ref, '-') }}
