@@ -1,0 +1,16 @@
+[package]
+name = "ken-protocol"
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-only"
+description = "Wire types for the Ken agent-server protocol"
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+time = { workspace = true }
+uuid = { workspace = true }
