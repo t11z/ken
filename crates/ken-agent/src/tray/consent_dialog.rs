@@ -12,7 +12,7 @@
 //! The consent flow is exercised end-to-end even in Phase 1 where
 //! the actual remote session uses `NoOpBackend`.
 
-#![cfg(windows)]
+#![cfg(all(windows, feature = "tray-app"))]
 
 use std::time::{Duration, Instant};
 

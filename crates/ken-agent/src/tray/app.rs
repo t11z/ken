@@ -2,15 +2,17 @@
 //!
 //! Sets up the system tray icon, context menu, and dispatches menu
 //! clicks to the appropriate windows or actions.
+//!
+//! This module compiles only on Windows per ADR-0009.
 
-#![cfg(windows)]
+#![cfg(all(windows, feature = "tray-app"))]
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use eframe::egui;
 use tray_icon::menu::{Menu, MenuEvent, MenuItem};
-use tray_icon::{TrayIcon, TrayIconBuilder};
+use tray_icon::TrayIconBuilder;
 
 /// Run the tray app event loop.
 ///
@@ -24,17 +26,14 @@ pub fn run_tray_app() {
     let item_status = MenuItem::new("Status", true, None);
     let item_audit = MenuItem::new("View audit log", true, None);
     let item_kill = MenuItem::new("Kill switch", true, None);
-    let item_about = MenuItem::new("About", true, None);
     let item_quit = MenuItem::new("Quit", true, None);
 
-    menu.append(&item_status).ok();
-    menu.append(&item_audit).ok();
-    menu.append(&item_kill).ok();
-    menu.append(&item_about).ok();
-    menu.append(&item_quit).ok();
+    let _ = menu.append(&item_status);
+    let _ = menu.append(&item_audit);
+    let _ = menu.append(&item_kill);
+    let _ = menu.append(&item_quit);
 
     // Build tray icon — uses a placeholder 16x16 RGBA icon.
-    // A proper .ico file would be loaded from resources/ in production.
     let icon = tray_icon::Icon::from_rgba(vec![0x33, 0x66, 0x99, 0xFF; 16 * 16], 16, 16)
         .expect("valid icon");
 
@@ -48,7 +47,6 @@ pub fn run_tray_app() {
     let show_status = Arc::new(AtomicBool::new(false));
     let show_kill_confirm = Arc::new(AtomicBool::new(false));
 
-    // Menu event handling runs in a thread; egui runs on the main thread.
     let show_status_clone = show_status.clone();
     let show_kill_clone = show_kill_confirm.clone();
 
@@ -63,7 +61,6 @@ pub fn run_tray_app() {
             if event.id == status_id {
                 show_status_clone.store(true, Ordering::SeqCst);
             } else if event.id == audit_id {
-                // Open the audit log in the user's default text viewer
                 let data_dir = crate::config::data_dir();
                 let paths = crate::config::DataPaths::new(&data_dir);
                 let _ = std::process::Command::new("notepad.exe")
@@ -77,8 +74,6 @@ pub fn run_tray_app() {
         }
     });
 
-    // Run the egui event loop. The main window is hidden; we only show
-    // windows when triggered by tray menu clicks.
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([400.0, 300.0])
@@ -94,7 +89,7 @@ pub fn run_tray_app() {
                 show_status,
                 show_kill_confirm,
                 kill_confirmed: false,
-            }))
+            }) as Box<dyn eframe::App>)
         }),
     );
 }
@@ -107,12 +102,10 @@ struct TrayApp {
 
 impl eframe::App for TrayApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Status window
         if self.show_status.load(Ordering::SeqCst) {
             super::status_window::show(ctx, &self.show_status);
         }
 
-        // Kill switch confirmation
         if self.show_kill_confirm.load(Ordering::SeqCst) && !self.kill_confirmed {
             egui::Window::new("Kill switch")
                 .collapsible(false)
@@ -128,17 +121,14 @@ impl eframe::App for TrayApp {
                             let data_dir = crate::config::data_dir();
                             let paths = crate::config::DataPaths::new(&data_dir);
                             let user = std::env::var("USERNAME").unwrap_or_default();
-                            match crate::killswitch::activate(
+                            if crate::killswitch::activate(
                                 &paths.kill_switch_file,
                                 "user requested via tray app",
                                 &user,
-                            ) {
-                                Ok(()) => {
-                                    self.kill_confirmed = true;
-                                }
-                                Err(e) => {
-                                    tracing::error!(error = %e, "kill switch activation failed");
-                                }
+                            )
+                            .is_ok()
+                            {
+                                self.kill_confirmed = true;
                             }
                         }
                         if ui.button("Abbrechen").clicked() {
@@ -148,7 +138,6 @@ impl eframe::App for TrayApp {
                 });
         }
 
-        // Kill switch success message
         if self.kill_confirmed {
             egui::Window::new("Ken gestoppt")
                 .collapsible(false)
@@ -165,7 +154,6 @@ impl eframe::App for TrayApp {
                 });
         }
 
-        // Repaint periodically for status polling
         ctx.request_repaint_after(std::time::Duration::from_secs(1));
     }
 }

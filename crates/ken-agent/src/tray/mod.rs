@@ -9,27 +9,29 @@
 //! - An audit log viewer entry point
 //!
 //! Built on `egui` with `eframe` as the windowing framework and
-//! `tray-icon` for the system tray icon. Windows-only.
+//! `tray-icon` for the system tray icon. Windows-only, gated behind
+//! the `tray-app` cargo feature.
 
-#[cfg(windows)]
+#[cfg(all(windows, feature = "tray-app"))]
 pub mod app;
-#[cfg(windows)]
+#[cfg(all(windows, feature = "tray-app"))]
 pub mod consent_dialog;
-#[cfg(windows)]
+#[cfg(all(windows, feature = "tray-app"))]
 pub mod status_window;
 
 /// Run the tray app. Called from the `ken-agent.exe tray` subcommand.
 ///
-/// On Windows, initializes the system tray icon and the egui event loop.
-/// On non-Windows, prints a message and returns (the tray app is
-/// Windows-only per ADR-0009).
+/// On Windows with the `tray-app` feature: initializes the system tray
+/// icon and the egui event loop.
+/// Otherwise: prints a message and returns.
 pub fn run() {
-    #[cfg(windows)]
+    #[cfg(all(windows, feature = "tray-app"))]
     {
         app::run_tray_app();
     }
-    #[cfg(not(windows))]
+    #[cfg(not(all(windows, feature = "tray-app")))]
     {
-        eprintln!("The tray app is only available on Windows.");
+        eprintln!("The tray app requires the 'tray-app' feature on Windows.");
+        eprintln!("Build with: cargo build --features tray-app");
     }
 }

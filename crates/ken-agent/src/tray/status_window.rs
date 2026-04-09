@@ -4,7 +4,7 @@
 //! endpoint ID, last heartbeat, pending commands, agent version.
 //! Polls for updates every 3 seconds while the window is open.
 
-#![cfg(windows)]
+#![cfg(all(windows, feature = "tray-app"))]
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
