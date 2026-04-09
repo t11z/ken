@@ -1,129 +1,90 @@
-# CLAUDE.md — `ken-agent`
+# CLAUDE.md — ken-agent
 
-This crate is the Windows endpoint binary. It is the most security-sensitive component of Ken because it runs with high privilege on machines belonging to people who trust the family IT chief. Read this entire file before touching anything in `src/`.
+This crate is the Windows endpoint binary. It is the most security-sensitive component of Ken because it runs with elevated privilege on machines belonging to people who trust the family IT chief. Every line of code in this crate must be defensible against ADR-0001.
 
-Read the root `CLAUDE.md` and ADR-0001 (`docs/adr/0001-what-ken-will-never-do.md`) first. Every line of code in this crate must be defensible against ADR-0001. When in doubt about whether a feature is allowed, the answer is no.
+Read the root `CLAUDE.md` and `docs/adr/0001-trust-boundaries-and-current-scope.md` before touching anything in `src/`. When in doubt about whether a capability is allowed, the answer is no — surface the question rather than making a judgment call.
 
-## What this binary is
+## Components
 
-A single Rust executable, packaged as an MSI, installed as a Windows service running under `LocalSystem`, with a companion Tray application running in the user session. The service and the Tray app communicate over a Named Pipe. The service speaks to the Ken server over mTLS. When a remote-control session is requested by the server and consented to by the user, the service hosts the session locally using embedded RustDesk crates.
+The agent is composed of four distinct subsystems that share this crate but have different trust profiles and different runtime contexts:
 
-## Component layout
+**The SYSTEM service.** Runs as a Windows service under the LocalSystem account. Responsible for reading OS state (Defender, Event Log, WMI, Firewall, BitLocker, Update), reporting heartbeats and status to the server over mTLS, receiving commands, and hosting the embedded remote-session subsystem. This is the component with elevated privilege and the strictest audit requirements.
 
-The crate compiles to **two binary targets**:
+**The user-mode Tray App.** Runs in the interactive user session, not as SYSTEM. Its only job is to present the consent dialog when the SYSTEM service receives a remote-control request, and to offer the user-facing controls defined in ADR-0001 T1-5 and T1-6 (audit log viewer and kill switch). It has no privileges beyond those of the logged-in user and no direct access to any Ken data beyond what the service chooses to expose through the IPC channel.
 
-- `ken-agent-svc` — the SYSTEM service. Runs as a Windows service. Owns all network communication with the server. Owns the embedded remote-session subsystem. Reads OS state. Writes the local audit log. Has no UI.
-- `ken-agent-tray` — the user-mode Tray app. Runs in the interactive user session. Owns the consent dialog. Owns the kill switch. Talks to the service over a Named Pipe. Has no network access of its own.
+**The Named Pipe IPC.** The bridge between the SYSTEM service and the Tray App. Uses Windows Named Pipes with strict ACLs restricting access to the current interactive user. The message format is defined in `ken-protocol` and is intentionally small: consent request, consent response, status query, audit log query, kill-switch trigger. Any expansion of this message set is an architectural decision and requires an ADR.
 
-This split is non-negotiable and has its own ADR (placeholder ADR-0006). The reason is simple: the service has privilege but no user context, the Tray app has user context but no privilege. Consent requires user context. Action requires privilege. The Named Pipe is the only place these two worlds meet, and the message types crossing it are deliberately small and well-typed.
+**The embedded remote-session subsystem.** The subsystem that handles screen capture (via `scrap`), codec (VP9), signaling and relay (via RustDesk crates), and input routing. This subsystem is only active when a consented session is in progress and is strictly gated by the consent check. It is the reason Ken embeds RustDesk crates rather than shelling out to an external client, per the architectural decision recorded in ADR-00XX (the RustDesk embedding ADR — number to be assigned when the ADR is drafted).
 
-## Module structure inside `src/`
+## Fail-safe defaults
 
-```
-src/
-├── bin/
-│   ├── svc.rs              entry point for ken-agent-svc
-│   └── tray.rs             entry point for ken-agent-tray
-├── lib.rs                  shared library used by both binaries
-├── service/                SYSTEM service code
-│   ├── mod.rs
-│   ├── lifecycle.rs        Windows service lifecycle handlers
-│   ├── client.rs           mTLS client to ken-server
-│   ├── reporter.rs         polls OS state, builds StatusReport
-│   └── command_handler.rs  dispatches ServerMessage variants
-├── tray/                   user-mode UI code
-│   ├── mod.rs
-│   ├── consent_dialog.rs   the one and only consent surface
-│   ├── status_view.rs      "Ken is running" status, audit log viewer
-│   └── kill_switch.rs      the unconditional pause/uninstall flow
-├── ipc/                    Named Pipe protocol between svc and tray
-│   ├── mod.rs
-│   ├── pipe.rs             low-level pipe handling
-│   └── messages.rs         the small set of message types crossing the pipe
-├── windows_state/          read-only OS state collection
-│   ├── mod.rs
-│   ├── defender.rs
-│   ├── update.rs
-│   ├── firewall.rs
-│   ├── bitlocker.rs
-│   └── events.rs           filtered Event Log reader
-├── session/                embedded remote-session subsystem
-│   ├── mod.rs
-│   ├── capture.rs          screen capture wrapper
-│   ├── codec.rs            video encoding wrapper
-│   ├── signaling.rs        hbbs/hbbr client logic
-│   ├── input.rs            input event routing
-│   └── lifecycle.rs        session start/stop, consent enforcement
-├── audit/
-│   ├── mod.rs
-│   └── log.rs              local user-readable audit log
-└── updater/
-    ├── mod.rs
-    └── trigger.rs          checks for updates, schedules msiexec
-```
+The agent is built to fail toward the user's side, never toward the admin's side. Concretely:
 
-This structure is the target. Claude Code is expected to create modules in this layout and not invent alternative organizations.
+- **If the Tray App crashes**, the SYSTEM service refuses to start a remote-control session. There is no "approve on the user's behalf because the dialog UI is broken" fallback.
+- **If the Named Pipe cannot be established**, the service reports an error to the server but continues to run in read-only mode. It does not assume consent, does not retry with weaker verification, does not escalate.
+- **If the server is unreachable**, the agent continues to operate locally. It buffers heartbeats and status reports for later delivery, and it never blocks user activity because of a network failure.
+- **If an update fails to install**, the agent falls back to the previous version automatically and reports the failure on the next successful heartbeat. A partial update is never left in place.
+- **If the service receives a command it does not understand**, it logs the command to the local audit log, reports the unknown command to the server, and ignores it. It does not guess, does not execute a "closest match," and does not fall back to a generic action.
 
-## Hard rules for code in this crate
+These are not aspirational. They are properties the code must exhibit, and they must be covered by tests wherever possible.
 
-These are concrete restatements of ADR-0001 in the form of code-level rules. Violating them is a build-blocking failure regardless of test outcomes.
+## The consent gate
 
-1. **No code in this crate may read user files.** The only filesystem reads permitted are:
-   - Ken's own config files under `%ProgramData%\Ken\`
-   - Ken's own audit log
-   - Windows API calls that incidentally touch the filesystem (BitLocker volume status, installed software registry, etc.) — but never the *contents* of user files
+Any code path in this crate that leads to screen capture, input injection, or audio capture must pass through the consent gate. The consent gate is a single function that asks the Tray App to display the consent dialog and waits for an explicit positive response. It has no bypass, no "trusted admin" mode, no "remembered consent" cache.
 
-2. **No code in this crate may capture keyboard input outside an active, consented remote session.** The `tray::consent_dialog` module is the only place where user keystrokes are read at all (clicking "Allow"/"Deny" is implemented as button events, not key capture).
+When adding any feature that touches the remote-session subsystem, the first question is "does this route through the consent gate?" If the answer is not an unambiguous yes, the feature does not ship.
 
-3. **No code in this crate may capture the screen outside an active, consented remote session.** `session::capture` only initializes after `session::lifecycle` has confirmed an in-session consent click within the last few seconds.
+The consent gate is tested with a mock Tray App that can be configured to approve, deny, or time out. Every new code path that reaches the remote-session subsystem must include a test that the path is blocked when the mock denies or times out.
 
-4. **No code in this crate may make network connections to any host other than the configured Ken server URL and the Ken server's signaling relay.** There is exactly one config-driven server endpoint. There is no fallback, no telemetry endpoint, no analytics, no crash reporter to a public URL.
+## The local audit log
 
-5. **No code in this crate may modify Windows Defender, Windows Update, the firewall, BitLocker, scheduled tasks, services, registry keys outside Ken's own subtree, or any other OS configuration.** The `windows_state` module is read-only and named that way deliberately.
+Per ADR-0001 T1-5, the agent maintains a local audit log that is readable by the user of the endpoint. Everything the agent does is recorded there:
 
-6. **No code in this crate may bypass the consent flow for remote sessions.** Specifically, the `session::lifecycle::start_session` function must not be callable without a fresh `ConsentGranted` message from the Tray app over the IPC channel. This is enforced by type: `start_session` takes a `ConsentToken` parameter that can only be constructed inside `tray::consent_dialog` after a user click.
+- Service start and stop
+- Every heartbeat sent (timestamp and size, not content of user data since there is none)
+- Every command received from the server (type, timestamp, outcome)
+- Every consent dialog shown (type, timestamp, user response)
+- Every remote-session start and end (timestamp, duration, initiating admin identity if known)
+- Every update check and update application
+- Every error and warning from the service
 
-7. **No code in this crate may write logs containing user data, screen contents, keystrokes, or session payloads.** The audit log records *what Ken did*, never *what Ken saw*.
+The log format is human-readable plain text or structured JSONL, and the log file is stored at a well-known path under `ProgramData\Ken\audit.log` with ACLs that grant read access to all local users. The Tray App provides a "view audit log" entry point that opens the log in the user's default text viewer.
+
+Code that takes an action without logging it to the audit log is a bug. The log is not a diagnostic aid — it is the transparency mechanism that makes ADR-0001 T1-5 a live commitment.
+
+## Windows-specific conventions
+
+**Use `windows-rs` directly** for Windows API calls rather than wrapping each one in a custom abstraction. `windows-rs` is the canonical, Microsoft-maintained binding layer, and its shape is already idiomatic for the APIs Ken consumes.
+
+**Use `windows-service`** for the service lifecycle (install, start, stop, status). Do not reimplement service control.
+
+**Run in the LocalSystem account**, not in a custom service account. A custom account adds installation complexity without meaningful security benefit in the family-IT threat model.
+
+**Tray App lives in its own binary** (`ken-tray.exe`), started by the service via the Windows session-switching APIs when the service detects an active user session. This is the cleanest separation between the privileged service and the user-mode UI. Both binaries live in this crate; the Cargo.toml defines two binary targets.
+
+**Named Pipe ACLs** are set explicitly at pipe creation. The pipe grants access only to the SID of the interactive user whose Tray App is expected to connect. Default ACLs are not acceptable.
 
 ## Dependencies
 
-Permitted by default:
+This crate depends on `ken-protocol` for wire types. External dependencies beyond the core set (`tokio`, `serde`, `tracing`, `anyhow`, `thiserror`, `windows-rs`, `windows-service`, and the RustDesk crates) require justification in the pull request description. Adding a new external dependency here means more code running as LocalSystem on family PCs, and every addition expands the audit surface.
 
-- `ken-protocol` (the shared crate)
-- `windows` (the official `windows-rs` crate)
-- `windows-service` (Windows service lifecycle helper)
-- `tokio` with the `rt-multi-thread`, `net`, `io-util`, `time` features
-- `rustls` and `tokio-rustls` for mTLS
-- `serde` and `serde_json`
-- `thiserror` and `anyhow`
-- `tracing` and `tracing-subscriber`
-- `clap` for command-line argument parsing in dev/debug builds
-- The relevant RustDesk crates for the embedded remote-session subsystem (specific list to be pinned in an ADR)
-- A Tray UI crate (TBD by ADR; the candidates are `tao`+`wry`, `egui`, or a minimal native window via `windows-rs` directly)
+## Testing
 
-Anything else requires an ADR. Adding a dependency that pulls in a transitive HTTP client, telemetry library, or auto-update mechanism is a hard no — those capabilities must be implemented in Ken's own code or not at all.
+Unit tests live alongside the code in `src/`, following Rust convention. Integration tests live in `crates/ken-agent/tests/`.
 
-## Tests
+Tests that require Windows APIs are gated with `#[cfg(windows)]` and are run in CI on a Windows runner. Tests that exercise the consent gate use a mock Tray App implementation that is compiled into the test binary.
 
-- Unit tests for `windows_state` modules can run on Linux CI by feature-gating the actual Windows API calls behind a `#[cfg(windows)]` block and providing a mock data path for non-Windows builds. The mock path exists for CI, never for production.
-- The consent flow has a dedicated test suite in `tests/consent_enforcement.rs` that asserts `start_session` cannot be called without a valid `ConsentToken`. This test is the most important test in the entire crate.
-- The IPC layer has a round-trip test for every message type, similar to `ken-protocol`.
-- No test in this crate may make a real network connection. Network tests use a localhost loopback with a self-signed test cert.
+The remote-session subsystem is the hardest to test end-to-end, because it involves real screen capture and network I/O. The testing strategy is to verify the gating logic (consent check, session lifecycle, fail-safe paths) with unit tests, and to validate the capture/codec path with a small number of manual smoke tests documented in `docs/architecture/`.
 
-## Build targets
+## What this crate must not do
 
-Primary target: `x86_64-pc-windows-msvc`. Secondary target for development: `x86_64-pc-windows-gnu` (allows cross-compilation from Linux for compile-checks; production builds must use MSVC).
+- Read user files, browser state, clipboard, or any user data (ADR-0001 T2-2)
+- Log keystrokes or capture input outside an active session (ADR-0001 T2-3)
+- Take silent or scheduled screenshots (ADR-0001 T2-4)
+- Modify Defender configuration or any OS security settings (implied by T2-1 in combination with T1 invariants; the agent reads, it does not write)
+- Install, update, or remove third-party software (T2-5)
+- Accept commands from any server other than the configured Ken server (T1-1, T1-2)
+- Perform any action without writing a corresponding entry to the local audit log (T1-5)
+- Survive a user-initiated kill-switch request (T1-6)
 
-CI must build for `x86_64-pc-windows-msvc` on every PR. Release builds happen on a Windows runner with the official MSI signing certificate.
-
-## What an LLM should do here
-
-When given a prompt that touches this crate:
-
-1. Read this file completely.
-2. Read ADR-0001 again. Yes, again. The temptation to drift is highest in this crate.
-3. Identify which module(s) the change affects.
-4. Verify that every change satisfies all seven hard rules above.
-5. If a change requires touching `session::lifecycle::start_session` or `tray::consent_dialog`, treat it as a security-critical change: extra care, extra tests, and the PR description must explicitly affirm that the consent flow remains intact.
-6. Write the change. Build for Windows. Run the test suite. Open a PR.
-7. If a change *cannot* be made without violating one of the hard rules, refuse and ask the architect to draft an ADR explicitly authorizing the exception. There may be cases where an exception is justified, but they are decided in writing, not in code.
+If a prompt asks for any of the above, stop and surface the question before proceeding.
