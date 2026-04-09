@@ -4,20 +4,19 @@
 //! passive OS state (Defender, firewall, `BitLocker`, Windows Update,
 //! security events) to the Ken server. A user-mode Tray App provides
 //! visibility and the consent gate for remote sessions.
+//!
+// Many modules define types and functions that are prepared for use in later
+// phases or on specific platforms. Suppress dead_code at the crate level so
+// RUSTFLAGS=-D warnings in CI does not reject them.
+#![allow(dead_code)]
 
-#[allow(dead_code)]
 mod audit;
 mod cli;
-#[allow(dead_code)]
 mod config;
-#[allow(dead_code)]
 mod ipc;
-#[allow(dead_code)]
 mod observer;
-#[allow(dead_code)]
 mod remote_session;
 mod service;
-#[allow(dead_code)]
 mod worker;
 
 use cli::Action;

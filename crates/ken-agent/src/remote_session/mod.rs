@@ -39,7 +39,6 @@ pub trait RemoteSessionBackend: Send + Sync {
 }
 
 /// Errors from the remote session backend.
-#[allow(dead_code)]
 #[derive(Debug, thiserror::Error)]
 pub enum RemoteSessionError {
     /// The backend is not yet implemented (Phase 2 feature).

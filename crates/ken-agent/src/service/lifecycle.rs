@@ -8,15 +8,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 /// The Windows service name as registered with the SCM.
-#[allow(dead_code)]
 pub const SERVICE_NAME: &str = "KenAgent";
 
 /// The display name shown in services.msc.
-#[allow(dead_code)]
 pub const SERVICE_DISPLAY_NAME: &str = "Ken Agent";
 
 /// Service description.
-#[allow(dead_code)]
 pub const SERVICE_DESCRIPTION: &str =
     "Ken \u{2014} observability and consent-gated remote access for family PCs. https://ken.family";
 
@@ -41,7 +38,6 @@ pub async fn service_loop(shutdown: Arc<AtomicBool>) {
 ///
 /// Returns `true` if the kill-switch file exists, meaning a user
 /// previously activated it and the service should refuse to start.
-#[allow(dead_code)]
 #[must_use]
 pub fn is_kill_switch_active(kill_switch_path: &std::path::Path) -> bool {
     kill_switch_path.exists()

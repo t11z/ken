@@ -63,7 +63,6 @@ pub struct AgentStatus {
 }
 
 /// The outcome of a consent request from the user.
-#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConsentOutcome {
     /// User clicked "Allow".
