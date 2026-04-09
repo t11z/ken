@@ -68,7 +68,6 @@ jobs:
           title = "Ken"
           authors = ["The Ken contributors"]
           language = "en"
-          multilingual = false
           src = "src"
 
           [output.html]
