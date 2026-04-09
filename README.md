@@ -1,3 +1,4 @@
+[![ci](https://github.com/t11z/ken/actions/workflows/ci.yml/badge.svg)](https://github.com/t11z/ken/actions/workflows/ci.yml) [![Dependabot Updates](https://github.com/t11z/ken/actions/workflows/dependabot/dependabot-updates/badge.svg)](https://github.com/t11z/ken/actions/workflows/dependabot/dependabot-updates) [![release](https://github.com/t11z/ken/actions/workflows/workflow-release.yml/badge.svg)](https://github.com/t11z/ken/actions/workflows/workflow-release.yml)
 # 🐕 Ken
 
 *A quiet guardian for your family's PCs.*
