@@ -38,10 +38,7 @@ pub struct Endpoint {
         reason = "will be used when certificate management UI is added"
     )]
     pub certificate_pem: String,
-    #[expect(
-        dead_code,
-        reason = "will be used when certificate management UI is added"
-    )]
+    /// When the endpoint's client certificate expires (checked by mTLS verifier).
     pub certificate_expires_at: String,
     pub revoked_at: Option<String>,
     pub display_name: Option<String>,

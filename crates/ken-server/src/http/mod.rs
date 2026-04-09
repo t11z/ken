@@ -10,6 +10,7 @@ pub mod admin;
 pub mod agent_api;
 pub mod auth;
 pub mod enrollment;
+pub mod tls;
 
 use axum::Router;
 use tower_http::services::ServeDir;

@@ -151,6 +151,12 @@ impl Ca {
             .map_err(|e| AppError::Tls(format!("failed to build issuer from CA cert: {e}")))
     }
 
+    /// Generate a test CA for use in unit tests. Panics on failure.
+    #[cfg(test)]
+    pub fn generate_ca_for_test() -> Self {
+        Self::generate_ca().expect("test CA generation should succeed")
+    }
+
     fn generate_ca() -> Result<Self, AppError> {
         let key_pair = KeyPair::generate()
             .map_err(|e| AppError::Tls(format!("failed to generate CA key: {e}")))?;

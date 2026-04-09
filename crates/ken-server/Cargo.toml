@@ -29,6 +29,7 @@ tower-http = { workspace = true }
 sqlx = { workspace = true }
 askama = { workspace = true }
 x509-parser = "0.18"
+rustls-pemfile = "2"
 
 [dev-dependencies]
 tempfile = "3"
