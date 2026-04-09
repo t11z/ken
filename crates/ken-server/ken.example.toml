@@ -1,0 +1,39 @@
+# Ken server configuration.
+# Copy this file to /etc/ken/ken.toml and adjust as needed.
+# All fields have sensible defaults; a minimal config can be empty.
+
+[server]
+# Address for the agent-facing mTLS listener.
+agent_listen_address = "0.0.0.0:8443"
+
+# Address for the admin UI and enrollment listener.
+admin_listen_address = "0.0.0.0:8444"
+
+# How agents should reach this server. Used in enrollment responses.
+# Set this to your server's hostname or IP as seen by the agents.
+public_url = "https://ken.local:8443"
+
+[storage]
+# Root directory for all persistent data.
+data_dir = "/var/lib/ken"
+
+[tls]
+# Paths are relative to data_dir unless absolute.
+ca_certificate_path = "ca/root.crt"
+ca_key_path = "ca/root.key"
+server_certificate_path = "server/server.crt"
+server_key_path = "server/server.key"
+
+[enrollment]
+# How long an enrollment token is valid (seconds). Default: 900 (15 min).
+token_lifetime_seconds = 900
+
+# How many days a client certificate is valid. Default: 365.
+client_certificate_lifetime_days = 365
+
+[logging]
+# Tracing filter. Examples: "info", "debug", "ken_server=debug,info"
+level = "info"
+
+# Output format: "json" (default, for production) or "text" (for development).
+format = "json"

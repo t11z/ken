@@ -1,0 +1,27 @@
+# Example Docker Compose file for the Ken server.
+# Copy this file and adapt it for your deployment.
+#
+# Usage:
+#   1. Copy this file to docker-compose.yml
+#   2. Create /etc/ken/ken.toml (see ken.example.toml)
+#   3. Create /var/lib/ken/ for data storage
+#   4. Run: docker compose up -d
+#   5. Check logs for the admin access token: docker compose logs ken-server
+
+services:
+  ken-server:
+    image: ghcr.io/t11z/ken-server:latest
+    container_name: ken-server
+    restart: unless-stopped
+    ports:
+      # Agent API (mTLS)
+      - "8443:8443"
+      # Admin UI and enrollment
+      - "8444:8444"
+    volumes:
+      # Configuration
+      - /etc/ken:/etc/ken:ro
+      # Persistent data (SQLite, CA keys, certificates)
+      - /var/lib/ken:/var/lib/ken
+    environment:
+      KEN_CONFIG: /etc/ken/ken.toml
