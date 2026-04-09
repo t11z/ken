@@ -2,7 +2,7 @@
 
 This file is the entry point for any LLM working in this repository. Read it before reading anything else. It defines the rules of engagement, the role separation between architect and implementer, and the conventions every contributor — human or otherwise — is expected to follow.
 
-This file is **immutable from Claude Code's perspective**. Claude Code may read it, must comply with it, and may never modify it without an explicit, narrow instruction from the human architect that names this file by path. The same rule applies to every other `CLAUDE.md` in the tree, to every file under `docs/adr/`, to every file under `prompts/`, and to every file under `.claude/`.
+This file is **immutable from Claude Code's perspective**. Claude Code may read it, must comply with it, and may never modify it without an explicit, narrow instruction from the human architect that names this file by path. The same rule applies to every other `CLAUDE.md` in the tree, to every file under `docs/adr/`, and to every file under `.claude/`.
 
 ## What Ken is
 
