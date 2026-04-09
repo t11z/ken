@@ -15,7 +15,7 @@ A substantial fraction of reasonable-sounding feature requests touch items in AD
 Ken uses a two-role model for all significant changes:
 
 - **The Architect** decides what Ken should do and why. Architecture decisions are recorded as ADRs, and ADRs are immutable once accepted. The Architect is currently a single person (the project owner), working with the community through discussions and pull requests.
-- **The Implementer** executes decisions. Implementation is delegated to Claude Code via prompt files stored in [`prompts/`](prompts/). Human contributors implement work the same way: against a decision that already exists, not by inventing one along the way.
+- **The Implementer** executes decisions. Implementation is delegated to Claude Code via prompts. Human contributors implement work the same way: against a decision that already exists, not by inventing one along the way.
 
 This separation is not bureaucracy for its own sake. It exists because Ken's trust story depends on every significant commitment surviving a written round-trip, and because implementation under time pressure tends to prefer what is easy over what is correct. Separating the roles forces the "correct" question to be answered first.
 
