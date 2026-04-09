@@ -23,7 +23,6 @@ ken/
 │   ├── adr/
 │   ├── architecture/
 │   └── user/
-├── prompts/
 ├── CLAUDE.md
 ├── CONTRIBUTING.md
 ├── Cargo.toml
