@@ -20,6 +20,7 @@ mod net;
 mod observer;
 mod remote_session;
 mod service;
+mod tray;
 mod updater;
 mod worker;
 
@@ -62,7 +63,7 @@ fn main() {
             }
         }
         Action::Tray => {
-            eprintln!("Tray App not yet implemented (Section 8)");
+            tray::run();
         }
         Action::Enroll { url } => {
             if url.is_empty() {
