@@ -13,8 +13,10 @@
 mod audit;
 mod cli;
 mod config;
+mod enroll;
 mod ipc;
 mod killswitch;
+mod net;
 mod observer;
 mod remote_session;
 mod service;

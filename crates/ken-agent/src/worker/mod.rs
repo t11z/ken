@@ -4,3 +4,4 @@
 //! command processing.
 
 pub mod commands;
+pub mod main_loop;
