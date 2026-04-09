@@ -47,6 +47,7 @@ pub fn is_update_available(server_version: &str, running_version: &str) -> bool 
 ///
 /// Returns an error if the signature is invalid or verification fails.
 #[cfg(windows)]
+#[allow(clippy::unnecessary_wraps)] // Will return Err when WinVerifyTrust is implemented
 pub fn verify_authenticode(_msi_path: &std::path::Path) -> Result<(), anyhow::Error> {
     // Phase 1 stub. Real implementation would use:
     // windows::Win32::Security::WinTrust::WinVerifyTrust
