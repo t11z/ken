@@ -1,0 +1,35 @@
+name: 📝 Documentation improvement
+description: Report a documentation error, gap, or unclear passage
+labels: ["type/docs", "area/docs", "status/needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Documentation improvements are always welcome and usually easy to merge. If you have the fix ready, you can also open a pull request directly instead of filing this issue.
+
+  - type: textarea
+    id: location
+    attributes:
+      label: Where is the problem?
+      description: |
+        A link to the specific file, section, or line. If it is in multiple places, list them all.
+      placeholder: |
+        https://github.com/t11z/ken/blob/main/docs/user/install.md#step-3
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is wrong, missing, or unclear?
+      description: |
+        Quote the passage if it is a wording issue. Describe the gap if something is missing.
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested improvement
+      description: |
+        Optional. If you have a specific fix in mind, describe it here.

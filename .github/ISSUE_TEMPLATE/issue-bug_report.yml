@@ -1,0 +1,90 @@
+name: 🐛 Bug report
+description: Report something Ken does wrong or fails to do
+labels: ["type/bug", "status/needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. A specific, reproducible report is the single most useful thing you can contribute — it saves everyone time and makes the fix much more likely.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of what went wrong.
+      placeholder: When I did X, Ken did Y instead of Z.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+      description: The behavior you thought was correct, and why.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: |
+        The exact sequence that triggers the bug. Include anything that matters: the endpoint state, the admin action, the timing.
+      placeholder: |
+        1. Enroll a new endpoint running Windows 11 24H2
+        2. In the admin UI, click "Request Session" on the endpoint
+        3. Observe that the Tray App on the endpoint does not show the consent dialog
+    validations:
+      required: true
+
+  - type: input
+    id: ken-version
+    attributes:
+      label: Ken version
+      description: Which version of Ken are you running? You can find this in the admin UI footer or in the agent's audit log.
+      placeholder: e.g. v0.3.2
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Which part of Ken is affected?
+      options:
+        - Agent (Windows endpoint)
+        - Server (Raspberry Pi backend)
+        - Frontend (admin web UI)
+        - Installer / MSI
+        - Other / unsure
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: |
+        OS version, hardware, network setup. Anything relevant to reproducing the issue.
+      placeholder: |
+        - Server: Raspberry Pi 5, Debian Bookworm, Docker 25.x
+        - Endpoint: Windows 11 23H2, Defender enabled, no third-party AV
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: |
+        Paste the relevant log entries from the agent audit log (`ProgramData\Ken\audit.log`) or the server logs. Redact anything sensitive.
+      render: text
+
+  - type: checkboxes
+    id: boundaries
+    attributes:
+      label: Trust boundary check
+      description: Does this bug involve Ken doing something it should not be doing (per ADR-0001)?
+      options:
+        - label: I have read ADR-0001 and I believe this bug is a correctness issue, not a trust-boundary violation.
+        - label: I believe this bug is a trust-boundary violation — Ken is doing something it should not.

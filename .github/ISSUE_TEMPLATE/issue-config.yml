@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Discussion
+    url: https://github.com/t11z/ken/discussions
+    about: Open-ended questions, design exploration, and community topics belong in Discussions, not Issues.
+  - name: Trust boundaries
+    url: https://github.com/t11z/ken/blob/main/docs/adr/0001-trust-boundaries-and-current-scope.md
+    about: Before opening a feature request, please check whether it touches the trust boundaries in ADR-0001.

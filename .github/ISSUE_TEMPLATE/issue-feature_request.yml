@@ -1,0 +1,54 @@
+name: ✨ Feature request
+description: Suggest a new capability or behavior for Ken
+labels: ["type/feature", "status/needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting an improvement. Before filling this out, please take a moment to read [ADR-0001](https://github.com/t11z/ken/blob/main/docs/adr/0001-trust-boundaries-and-current-scope.md). It describes the trust boundaries Ken commits to, and a lot of reasonable-sounding features are explicitly out of scope. Knowing which tier your request touches will save everyone time.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: |
+        Describe the situation in your family-IT work where you wish Ken could do something it currently cannot. Start with the problem, not the solution.
+      placeholder: |
+        When my mother's PC hasn't installed Windows Updates for two weeks, I want to know about it without having to open the dashboard every day.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What do you think Ken should do?
+      description: Your proposed solution. It's fine to be rough — discussion can refine it.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: tier
+    attributes:
+      label: Which trust tier does this touch?
+      description: |
+        If unsure, read ADR-0001. Tier 1 items are invariants that will not change. Tier 2 items are current scope boundaries that could be changed through an ADR.
+      options:
+        - Neither — this is within current scope, no ADR needed
+        - Tier 2 — requires an ADR to change a current scope boundary
+        - Tier 1 — I know this touches an invariant but I want to discuss it anyway
+        - I don't know
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What alternatives have you considered?
+      description: |
+        Other ways to solve the problem — including workarounds, existing tools, or "just do it manually."
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else?
+      description: Links, prior discussions, screenshots, or context that helps.
