@@ -14,7 +14,7 @@ The agent is composed of four distinct subsystems that share this crate but have
 
 **The Named Pipe IPC.** The bridge between the SYSTEM service and the Tray App. Uses Windows Named Pipes with strict ACLs restricting access to the current interactive user. The message format is defined in `ken-protocol` and is intentionally small: consent request, consent response, status query, audit log query, kill-switch trigger. Any expansion of this message set is an architectural decision and requires an ADR.
 
-**The embedded remote-session subsystem.** The subsystem that handles screen capture (via `scrap`), codec (VP9), signaling and relay (via RustDesk crates), and input routing. This subsystem is only active when a consented session is in progress and is strictly gated by the consent check. It is the reason Ken embeds RustDesk crates rather than shelling out to an external client, per the architectural decision recorded in ADR-00XX (the RustDesk embedding ADR — number to be assigned when the ADR is drafted).
+**The embedded remote-session subsystem.** The subsystem that handles screen capture (via `scrap`), codec (VP9), signaling and relay (via RustDesk crates), and input routing. This subsystem is only active when a consented session is in progress and is strictly gated by the consent check. It is the reason Ken embeds RustDesk crates rather than shelling out to an external client, per the architectural decision recorded in ADR-0003.
 
 ## Fail-safe defaults
 
