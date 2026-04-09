@@ -32,7 +32,7 @@ Without an explicit per-file instruction from the architect, Claude Code may not
 - Any file in `.claude/` (including `.claude/skills/` and `.claude/commands/`)
 - Any file in `.github/` (workflows, issue templates, labels, configuration)
 - `LICENSE`, `README.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`
-- `docs/repository-structure.md`
+- `docs/architecture/repository-structure.md`
 - The workspace root `Cargo.toml` and `rust-toolchain.toml`
 - This file
 
@@ -48,7 +48,7 @@ When in doubt, read the prompt file again. If the prompt does not name a file, d
 
 ## Repository structure
 
-The authoritative description of the repository layout lives in `docs/repository-structure.md`. Read it once before starting work; it tells you where things belong and why. This file does not duplicate that information.
+The authoritative description of the repository layout lives in `docs/architecture/repository-structure.md`. Read it once before starting work; it tells you where things belong and why. This file does not duplicate that information.
 
 Each crate has its own `CLAUDE.md` with crate-specific conventions. Read the relevant one before working in that crate.
 

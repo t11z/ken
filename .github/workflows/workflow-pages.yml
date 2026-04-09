@@ -57,7 +57,7 @@ jobs:
 
           # Architecture
 
-          - [Repository Structure](docs/repository-structure.md)
+          - [Repository Structure](docs/architecture/repository-structure.md)
 
           # For Users
 
