@@ -4,7 +4,19 @@
 [advisories]
 # Deny crates with known security vulnerabilities.
 version = 2
-ignore = []
+ignore = [
+    # GTK3 bindings pulled in by tray-icon on Linux, but the tray app
+    # is Windows-only (#[cfg(windows)]) and uses Win32 APIs, not GTK.
+    # These deps are never compiled into the agent binary.
+    "RUSTSEC-2024-0370", # proc-macro-error unmaintained
+    "RUSTSEC-2024-0412", # gtk-rs GTK3
+    "RUSTSEC-2024-0413", # gtk-rs GTK3
+    "RUSTSEC-2024-0415", # gtk-rs GTK3
+    "RUSTSEC-2024-0416", # gtk-rs GTK3
+    "RUSTSEC-2024-0418", # gtk-rs GTK3
+    "RUSTSEC-2024-0419", # gtk-rs GTK3
+    "RUSTSEC-2024-0420", # gtk-rs GTK3
+]
 
 [licenses]
 version = 2
@@ -23,6 +35,9 @@ allow = [
     "AGPL-3.0-or-later",
     # webpki-roots uses CDLA-Permissive-2.0 for Mozilla's CA certificate data
     "CDLA-Permissive-2.0",
+    # Font licenses used by egui's default fonts (ADR-0009)
+    "OFL-1.1",
+    "Ubuntu-font-1.0",
     # Some crates use these dual or combined forms
     "Apache-2.0 WITH LLVM-exception",
     "BSL-1.0",
