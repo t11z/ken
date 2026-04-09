@@ -7,16 +7,13 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use ken_protocol::audit::{AuditEvent, AuditEventKind};
-use ken_protocol::command::{
-    CommandEnvelope, CommandOutcome, CommandPayload, CommandResult,
-};
+use ken_protocol::command::{CommandEnvelope, CommandOutcome, CommandPayload, CommandResult};
 use ken_protocol::enrollment::{EnrollmentRequest, EnrollmentResponse};
 use ken_protocol::heartbeat::{Heartbeat, HeartbeatAck};
 use ken_protocol::ids::{CommandId, EndpointId, HeartbeatId, SessionId};
 use ken_protocol::status::{
-    BitLockerStatus, BitLockerVolumeStatus, DefenderStatus, FirewallProfileState,
-    FirewallStatus, OsStatusSnapshot, SecurityEvent, SecurityEventLevel,
-    WindowsUpdateStatus,
+    BitLockerStatus, BitLockerVolumeStatus, DefenderStatus, FirewallProfileState, FirewallStatus,
+    OsStatusSnapshot, SecurityEvent, SecurityEventLevel, WindowsUpdateStatus,
 };
 use ken_protocol::SCHEMA_VERSION;
 
@@ -82,9 +79,12 @@ fn enrollment_request_roundtrip() {
 fn enrollment_response_roundtrip() {
     let resp = EnrollmentResponse {
         endpoint_id: EndpointId::new(),
-        ca_certificate_pem: "-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----".to_string(),
-        client_certificate_pem: "-----BEGIN CERTIFICATE-----\nclient\n-----END CERTIFICATE-----".to_string(),
-        client_private_key_pem: "-----BEGIN PRIVATE KEY-----\nkey\n-----END PRIVATE KEY-----".to_string(),
+        ca_certificate_pem: "-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----"
+            .to_string(),
+        client_certificate_pem: "-----BEGIN CERTIFICATE-----\nclient\n-----END CERTIFICATE-----"
+            .to_string(),
+        client_private_key_pem: "-----BEGIN PRIVATE KEY-----\nkey\n-----END PRIVATE KEY-----"
+            .to_string(),
         server_url: "https://ken.local:8443".to_string(),
         issued_at: now(),
         certificate_expires_at: now(),
@@ -320,9 +320,7 @@ fn audit_event_kind_all_variants() {
         AuditEventKind::ServiceStarted,
         AuditEventKind::ServiceStopped,
         AuditEventKind::HeartbeatSent,
-        AuditEventKind::CommandReceived {
-            command_id: cmd_id,
-        },
+        AuditEventKind::CommandReceived { command_id: cmd_id },
         AuditEventKind::CommandCompleted {
             command_id: cmd_id,
             result: CommandResult::Ok,

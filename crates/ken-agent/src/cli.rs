@@ -26,7 +26,7 @@ pub enum Action {
 
 /// Parse CLI arguments into an [`Action`].
 pub fn parse_args(args: &[String]) -> Action {
-    let subcommand = args.get(1).map(String::as_str).unwrap_or("help");
+    let subcommand = args.get(1).map_or("help", String::as_str);
 
     match subcommand {
         "install" => Action::Install,
@@ -110,12 +110,7 @@ mod tests {
     #[test]
     fn parse_enroll_without_url() {
         let args = vec!["ken-agent".into(), "enroll".into()];
-        assert_eq!(
-            parse_args(&args),
-            Action::Enroll {
-                url: String::new()
-            }
-        );
+        assert_eq!(parse_args(&args), Action::Enroll { url: String::new() });
     }
 
     #[test]

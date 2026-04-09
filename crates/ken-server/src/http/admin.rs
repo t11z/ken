@@ -5,7 +5,6 @@
 
 use axum::extract::{Form, Path, State};
 use axum::http::header::SET_COOKIE;
-use axum::http::StatusCode;
 use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum::routing::{get, post};
 use axum::Router;
@@ -15,6 +14,8 @@ use uuid::Uuid;
 
 use ken_protocol::command::{CommandEnvelope, CommandPayload};
 use ken_protocol::ids::{CommandId, EndpointId};
+
+use std::fmt::Write;
 
 use crate::error::AppError;
 use crate::state::AppState;
@@ -48,26 +49,20 @@ struct LoginForm {
     token: String,
 }
 
-async fn login_submit(
-    State(state): State<AppState>,
-    Form(form): Form<LoginForm>,
-) -> Response {
+async fn login_submit(State(state): State<AppState>, Form(form): Form<LoginForm>) -> Response {
     match auth::verify_token(&state, &form.token).await {
-        Ok(true) => {
-            match auth::create_session(&state).await {
-                Ok((session_id, _csrf)) => {
-                    let cookie = format!(
-                        "{SESSION_COOKIE}={session_id}; HttpOnly; SameSite=Strict; Path=/"
-                    );
-                    let mut response = Redirect::to("/admin").into_response();
-                    response
-                        .headers_mut()
-                        .insert(SET_COOKIE, cookie.parse().unwrap());
-                    response
-                }
-                Err(_) => Html(render_login(Some("Internal error"))).into_response(),
+        Ok(true) => match auth::create_session(&state).await {
+            Ok((session_id, _csrf)) => {
+                let cookie =
+                    format!("{SESSION_COOKIE}={session_id}; HttpOnly; SameSite=Strict; Path=/");
+                let mut response = Redirect::to("/admin").into_response();
+                response
+                    .headers_mut()
+                    .insert(SET_COOKIE, cookie.parse().unwrap());
+                response
             }
-        }
+            Err(_) => Html(render_login(Some("Internal error"))).into_response(),
+        },
         Ok(false) => Html(render_login(Some("Invalid access token"))).into_response(),
         Err(_) => Html(render_login(Some("Internal error"))).into_response(),
     }
@@ -94,10 +89,7 @@ async fn dashboard(
     let mut rows = String::new();
     for ep in &endpoints {
         let display = ep.display_name.as_deref().unwrap_or(&ep.hostname);
-        let last_seen = ep
-            .last_heartbeat_at
-            .as_deref()
-            .unwrap_or("never");
+        let last_seen = ep.last_heartbeat_at.as_deref().unwrap_or("never");
         let status_class = if ep.revoked_at.is_some() {
             "text-red-600"
         } else if ep.last_heartbeat_at.is_some() {
@@ -106,7 +98,8 @@ async fn dashboard(
             "text-gray-400"
         };
 
-        rows.push_str(&format!(
+        let _ = write!(
+            rows,
             r#"<tr class="border-b">
                 <td class="px-4 py-3 font-medium">{display}</td>
                 <td class="px-4 py-3">{}</td>
@@ -117,7 +110,7 @@ async fn dashboard(
                 </td>
             </tr>"#,
             ep.os_version, ep.id
-        ));
+        );
     }
 
     let content = format!(
@@ -165,7 +158,10 @@ async fn endpoint_detail(
         .ok_or_else(|| AppError::NotFound("endpoint not found".into()))?;
 
     let snapshot = state.storage.get_status_snapshot(&endpoint_id).await?;
-    let display_name = endpoint.display_name.as_deref().unwrap_or(&endpoint.hostname);
+    let display_name = endpoint
+        .display_name
+        .as_deref()
+        .unwrap_or(&endpoint.hostname);
 
     let mut content = format!(
         r#"<h1 class="text-2xl font-bold mb-6">{display_name}</h1>
@@ -201,7 +197,8 @@ async fn endpoint_detail(
                 r#"<span class="text-red-600">Off</span>"#
             };
 
-            content.push_str(&format!(
+            let _ = write!(
+                content,
                 r#"<div class="bg-white rounded shadow p-4">
                     <h2 class="font-semibold text-gray-600 mb-2">Defender</h2>
                     <dl class="text-sm space-y-1">
@@ -211,13 +208,13 @@ async fn endpoint_detail(
                         <div class="flex"><dt class="w-32 text-gray-500">Sig age:</dt><dd>{} days</dd></div>
                     </dl>
                 </div>"#,
-                defender.signature_version,
-                defender.signature_age_days,
-            ));
+                defender.signature_version, defender.signature_age_days,
+            );
         }
 
         if let Some(ref wu) = snap.windows_update {
-            content.push_str(&format!(
+            let _ = write!(
+                content,
                 r#"<div class="bg-white rounded shadow p-4">
                     <h2 class="font-semibold text-gray-600 mb-2">Windows Update</h2>
                     <dl class="text-sm space-y-1">
@@ -225,15 +222,16 @@ async fn endpoint_detail(
                         <div class="flex"><dt class="w-32 text-gray-500">Critical:</dt><dd>{}</dd></div>
                     </dl>
                 </div>"#,
-                wu.pending_update_count,
-                wu.pending_critical_update_count,
-            ));
+                wu.pending_update_count, wu.pending_critical_update_count,
+            );
         }
     }
 
-    content.push_str(r#"</div>
+    content.push_str(
+        r#"</div>
         <div class="flex gap-2">
-            <a href="/admin/commands/"#);
+            <a href="/admin/commands/"#,
+    );
     content.push_str(&id);
     content.push_str(r#"" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Send command</a>
             <a href="/admin" class="bg-gray-200 text-gray-700 px-4 py-2 rounded hover:bg-gray-300">Back</a>
@@ -276,7 +274,9 @@ async fn enroll_submit(
 ) -> Result<Html<String>, AppError> {
     let token_value = Uuid::new_v4().to_string();
     let now = OffsetDateTime::now_utc();
-    let expires = now + time::Duration::seconds(state.config.enrollment.token_lifetime_seconds as i64);
+    let lifetime_secs =
+        i64::try_from(state.config.enrollment.token_lifetime_seconds).unwrap_or(i64::MAX);
+    let expires = now + time::Duration::seconds(lifetime_secs);
 
     let token = EnrollmentToken {
         token: token_value.clone(),
@@ -326,7 +326,8 @@ async fn audit_log(
     let mut rows = String::new();
     for event in &events {
         let ep = event.endpoint_id.as_deref().unwrap_or("-");
-        rows.push_str(&format!(
+        let _ = write!(
+            rows,
             r#"<tr class="border-b text-sm">
                 <td class="px-4 py-2">{}</td>
                 <td class="px-4 py-2">{}</td>
@@ -335,7 +336,7 @@ async fn audit_log(
                 <td class="px-4 py-2">{}</td>
             </tr>"#,
             event.occurred_at, event.source, event.kind, event.message
-        ));
+        );
     }
 
     let content = format!(
@@ -361,10 +362,7 @@ async fn audit_log(
 
 // --- Commands ---
 
-async fn command_form(
-    _admin: AuthenticatedAdmin,
-    Path(endpoint_id): Path<String>,
-) -> Html<String> {
+async fn command_form(_admin: AuthenticatedAdmin, Path(endpoint_id): Path<String>) -> Html<String> {
     let content = format!(
         r#"<h1 class="text-2xl font-bold mb-6">Send command</h1>
         <form method="post" action="/admin/commands/{endpoint_id}" class="bg-white rounded shadow p-6 max-w-md">
@@ -423,10 +421,7 @@ async fn command_submit(
         payload,
     };
 
-    state
-        .storage
-        .queue_command(&endpoint_id, &envelope)
-        .await?;
+    state.storage.queue_command(&endpoint_id, &envelope).await?;
 
     // Audit event
     state
@@ -465,7 +460,9 @@ async fn command_submit(
 /// Render the login page.
 fn render_login(error: Option<&str>) -> String {
     let error_html = error
-        .map(|e| format!(r#"<div class="bg-red-50 text-red-700 p-3 rounded mb-4 text-sm">{e}</div>"#))
+        .map(|e| {
+            format!(r#"<div class="bg-red-50 text-red-700 p-3 rounded mb-4 text-sm">{e}</div>"#)
+        })
         .unwrap_or_default();
 
     format!(

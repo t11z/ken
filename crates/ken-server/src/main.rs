@@ -13,6 +13,7 @@ mod config;
 mod error;
 mod http;
 mod state;
+#[allow(dead_code)] // Many storage methods are prepared for use in later sections
 mod storage;
 
 use ca::Ca;
@@ -21,7 +22,7 @@ use state::AppState;
 use storage::Storage;
 
 /// Initialize the tracing subscriber based on config.
-fn init_tracing(logging: &config::LoggingConfig) -> anyhow::Result<()> {
+fn init_tracing(logging: &config::LoggingConfig) {
     use tracing_subscriber::EnvFilter;
 
     let filter =
@@ -38,8 +39,6 @@ fn init_tracing(logging: &config::LoggingConfig) -> anyhow::Result<()> {
             tracing_subscriber::fmt().with_env_filter(filter).init();
         }
     }
-
-    Ok(())
 }
 
 #[tokio::main]
@@ -48,7 +47,7 @@ async fn main() -> anyhow::Result<()> {
     let config_path = parse_config_path();
 
     let config = Config::load(config_path.as_deref())?;
-    init_tracing(&config.logging)?;
+    init_tracing(&config.logging);
     config.log_summary();
 
     let storage = Storage::connect(&config.storage).await?;

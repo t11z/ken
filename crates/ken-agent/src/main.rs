@@ -5,9 +5,20 @@
 //! security events) to the Ken server. A user-mode Tray App provides
 //! visibility and the consent gate for remote sessions.
 
+#[allow(dead_code)]
+mod audit;
 mod cli;
+#[allow(dead_code)]
 mod config;
+#[allow(dead_code)]
+mod ipc;
+#[allow(dead_code)]
+mod observer;
+#[allow(dead_code)]
+mod remote_session;
 mod service;
+#[allow(dead_code)]
+mod worker;
 
 use cli::Action;
 
@@ -59,67 +70,70 @@ fn main() {
             eprintln!("Enrollment not yet implemented (Section 10)");
             eprintln!("URL: {url}");
         }
-        Action::Status => {
-            let data_dir = config::data_dir();
-            let paths = config::DataPaths::new(&data_dir);
-
-            println!("Ken Agent Status");
-            println!("================");
-            println!("Data directory: {}", data_dir.display());
-            println!(
-                "Config file: {} ({})",
-                paths.config_file.display(),
-                if paths.config_file.exists() {
-                    "exists"
-                } else {
-                    "not found"
-                }
-            );
-            println!(
-                "Enrolled: {}",
-                if paths.endpoint_id_file.exists() {
-                    "yes"
-                } else {
-                    "no"
-                }
-            );
-            println!(
-                "Kill switch: {}",
-                if paths.kill_switch_file.exists() {
-                    "ACTIVE"
-                } else {
-                    "not active"
-                }
-            );
-        }
-        Action::KillSwitch => {
-            let data_dir = config::data_dir();
-            let paths = config::DataPaths::new(&data_dir);
-
-            if let Some(parent) = paths.kill_switch_file.parent() {
-                let _ = std::fs::create_dir_all(parent);
-            }
-
-            let content = format!(
-                "Kill switch activated at {}",
-                time::OffsetDateTime::now_utc()
-            );
-            match std::fs::write(&paths.kill_switch_file, content) {
-                Ok(()) => {
-                    println!("Kill switch activated. The Ken Agent service will not start.");
-                    println!(
-                        "To reverse, delete: {}",
-                        paths.kill_switch_file.display()
-                    );
-                }
-                Err(e) => {
-                    eprintln!("failed to activate kill switch: {e}");
-                    std::process::exit(1);
-                }
-            }
-        }
+        Action::Status => print_status(),
+        Action::KillSwitch => activate_kill_switch(),
         Action::Help => {
             cli::print_usage();
+        }
+    }
+}
+
+/// Print the agent's current status to stdout.
+fn print_status() {
+    let data_dir = config::data_dir();
+    let paths = config::DataPaths::new(&data_dir);
+
+    println!("Ken Agent Status");
+    println!("================");
+    println!("Data directory: {}", data_dir.display());
+    println!(
+        "Config file: {} ({})",
+        paths.config_file.display(),
+        if paths.config_file.exists() {
+            "exists"
+        } else {
+            "not found"
+        }
+    );
+    println!(
+        "Enrolled: {}",
+        if paths.endpoint_id_file.exists() {
+            "yes"
+        } else {
+            "no"
+        }
+    );
+    println!(
+        "Kill switch: {}",
+        if paths.kill_switch_file.exists() {
+            "ACTIVE"
+        } else {
+            "not active"
+        }
+    );
+}
+
+/// Activate the local kill switch (ADR-0001 T1-6).
+fn activate_kill_switch() {
+    let data_dir = config::data_dir();
+    let paths = config::DataPaths::new(&data_dir);
+
+    if let Some(parent) = paths.kill_switch_file.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+
+    let content = format!(
+        "Kill switch activated at {}",
+        time::OffsetDateTime::now_utc()
+    );
+    match std::fs::write(&paths.kill_switch_file, content) {
+        Ok(()) => {
+            println!("Kill switch activated. The Ken Agent service will not start.");
+            println!("To reverse, delete: {}", paths.kill_switch_file.display());
+        }
+        Err(e) => {
+            eprintln!("failed to activate kill switch: {e}");
+            std::process::exit(1);
         }
     }
 }

@@ -1,10 +1,9 @@
 //! HTTP API integration tests.
 //!
 //! These tests exercise the enrollment and heartbeat endpoints using
-//! axum's test client with an in-memory SQLite database.
+//! axum's test client with an in-memory `SQLite` database.
 
 use std::str::FromStr;
-use std::sync::Arc;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
@@ -113,20 +112,17 @@ fn admin_router_with_pool(pool: SqlitePool) -> axum::Router {
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-        let (_, expires_at, consumed_at, display_name) = match row {
-            Some(r) => r,
-            None => return Err((StatusCode::NOT_FOUND, "token not found".to_string())),
+        let Some((_, expires_at, consumed_at, display_name)) = row else {
+            return Err((StatusCode::NOT_FOUND, "token not found".to_string()));
         };
 
         if consumed_at.is_some() {
             return Err((StatusCode::CONFLICT, "token already consumed".to_string()));
         }
 
-        let exp = OffsetDateTime::parse(
-            &expires_at,
-            &time::format_description::well_known::Rfc3339,
-        )
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        let exp =
+            OffsetDateTime::parse(&expires_at, &time::format_description::well_known::Rfc3339)
+                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
         if OffsetDateTime::now_utc() > exp {
             return Err((StatusCode::GONE, "token expired".to_string()));
@@ -207,12 +203,11 @@ fn agent_router_with_pool(pool: SqlitePool) -> axum::Router {
         }
 
         // Check endpoint exists
-        let exists: Option<(String,)> =
-            sqlx::query_as("SELECT id FROM endpoints WHERE id = ?")
-                .bind(heartbeat.endpoint_id.to_string())
-                .fetch_optional(&state.pool)
-                .await
-                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        let exists: Option<(String,)> = sqlx::query_as("SELECT id FROM endpoints WHERE id = ?")
+            .bind(heartbeat.endpoint_id.to_string())
+            .fetch_optional(&state.pool)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
         if exists.is_none() {
             return Err((StatusCode::FORBIDDEN, "unknown endpoint".to_string()));

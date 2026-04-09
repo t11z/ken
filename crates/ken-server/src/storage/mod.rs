@@ -1,6 +1,6 @@
 //! Database layer for the Ken server.
 //!
-//! Wraps a SQLite connection pool and provides typed methods for every
+//! Wraps a `SQLite` connection pool and provides typed methods for every
 //! query the application needs. The raw pool is never exposed to handlers.
 //! Migrations are applied at startup via `sqlx::migrate!`.
 
@@ -18,7 +18,7 @@ use ken_protocol::status::OsStatusSnapshot;
 use crate::config::StorageConfig;
 use crate::error::AppError;
 
-/// Wrapper around the SQLite connection pool with typed query methods.
+/// Wrapper around the `SQLite` connection pool with typed query methods.
 #[derive(Clone)]
 pub struct Storage {
     pool: SqlitePool,
@@ -33,7 +33,15 @@ pub struct Endpoint {
     pub agent_version: String,
     pub enrolled_at: String,
     pub last_heartbeat_at: Option<String>,
+    #[expect(
+        dead_code,
+        reason = "will be used when certificate management UI is added"
+    )]
     pub certificate_pem: String,
+    #[expect(
+        dead_code,
+        reason = "will be used when certificate management UI is added"
+    )]
     pub certificate_expires_at: String,
     pub revoked_at: Option<String>,
     pub display_name: Option<String>,
@@ -64,6 +72,10 @@ pub struct EnrollmentToken {
 /// An audit event as stored in the database (with source and endpoint info).
 #[derive(Debug, Clone)]
 pub struct StoredAuditEvent {
+    #[expect(
+        dead_code,
+        reason = "id is selected from DB for completeness; will be used in detail views"
+    )]
     pub id: String,
     pub endpoint_id: Option<String>,
     pub occurred_at: String,
@@ -82,7 +94,7 @@ pub struct AdminSession {
 }
 
 impl Storage {
-    /// Connect to the SQLite database, creating the file if it does not exist.
+    /// Connect to the `SQLite` database, creating the file if it does not exist.
     ///
     /// # Errors
     ///
@@ -111,10 +123,13 @@ impl Storage {
 
     /// Connect to an in-memory database for testing.
     #[cfg(test)]
+    #[expect(
+        dead_code,
+        reason = "available for unit tests that need an in-memory database"
+    )]
     pub async fn connect_in_memory() -> Result<Self, AppError> {
         use std::str::FromStr;
-        let options = SqliteConnectOptions::from_str("sqlite::memory:")?
-            .foreign_keys(true);
+        let options = SqliteConnectOptions::from_str("sqlite::memory:")?.foreign_keys(true);
 
         let pool = SqlitePoolOptions::new()
             .max_connections(1)
@@ -166,21 +181,21 @@ impl Storage {
     ) -> Result<Option<EnrollmentToken>, AppError> {
         let row = sqlx::query_as::<_, (String, String, String, Option<String>, Option<String>)>(
             "SELECT token, created_at, expires_at, consumed_at, display_name \
-             FROM enrollment_tokens WHERE token = ?"
+             FROM enrollment_tokens WHERE token = ?",
         )
         .bind(token_value)
         .fetch_optional(&self.pool)
         .await?;
 
-        Ok(row.map(|(token, created_at, expires_at, consumed_at, display_name)| {
-            EnrollmentToken {
+        Ok(row.map(
+            |(token, created_at, expires_at, consumed_at, display_name)| EnrollmentToken {
                 token,
                 created_at,
                 expires_at,
                 consumed_at,
                 display_name,
-            }
-        }))
+            },
+        ))
     }
 
     /// Mark an enrollment token as consumed.
@@ -205,7 +220,7 @@ impl Storage {
             "INSERT INTO endpoints \
              (id, hostname, os_version, agent_version, enrolled_at, certificate_pem, \
               certificate_expires_at, display_name) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(&endpoint.id)
         .bind(&endpoint.hostname)
@@ -222,62 +237,124 @@ impl Storage {
 
     /// Look up an endpoint by ID.
     pub async fn get_endpoint(&self, id: &EndpointId) -> Result<Option<Endpoint>, AppError> {
-        let row = sqlx::query_as::<_, (
-            String, String, String, String, String,
-            Option<String>, String, String, Option<String>, Option<String>,
-        )>(
+        let row = sqlx::query_as::<
+            _,
+            (
+                String,
+                String,
+                String,
+                String,
+                String,
+                Option<String>,
+                String,
+                String,
+                Option<String>,
+                Option<String>,
+            ),
+        >(
             "SELECT id, hostname, os_version, agent_version, enrolled_at, \
              last_heartbeat_at, certificate_pem, certificate_expires_at, \
              revoked_at, display_name \
-             FROM endpoints WHERE id = ?"
+             FROM endpoints WHERE id = ?",
         )
         .bind(id.to_string())
         .fetch_optional(&self.pool)
         .await?;
 
-        Ok(row.map(|(id, hostname, os_version, agent_version, enrolled_at,
-                     last_heartbeat_at, certificate_pem, certificate_expires_at,
-                     revoked_at, display_name)| {
-            Endpoint {
-                id, hostname, os_version, agent_version, enrolled_at,
-                last_heartbeat_at, certificate_pem, certificate_expires_at,
-                revoked_at, display_name,
-            }
-        }))
+        Ok(row.map(
+            |(
+                id,
+                hostname,
+                os_version,
+                agent_version,
+                enrolled_at,
+                last_heartbeat_at,
+                certificate_pem,
+                certificate_expires_at,
+                revoked_at,
+                display_name,
+            )| {
+                Endpoint {
+                    id,
+                    hostname,
+                    os_version,
+                    agent_version,
+                    enrolled_at,
+                    last_heartbeat_at,
+                    certificate_pem,
+                    certificate_expires_at,
+                    revoked_at,
+                    display_name,
+                }
+            },
+        ))
     }
 
     /// List all enrolled endpoints.
     pub async fn list_endpoints(&self) -> Result<Vec<Endpoint>, AppError> {
-        let rows = sqlx::query_as::<_, (
-            String, String, String, String, String,
-            Option<String>, String, String, Option<String>, Option<String>,
-        )>(
+        let rows = sqlx::query_as::<
+            _,
+            (
+                String,
+                String,
+                String,
+                String,
+                String,
+                Option<String>,
+                String,
+                String,
+                Option<String>,
+                Option<String>,
+            ),
+        >(
             "SELECT id, hostname, os_version, agent_version, enrolled_at, \
              last_heartbeat_at, certificate_pem, certificate_expires_at, \
              revoked_at, display_name \
-             FROM endpoints ORDER BY enrolled_at DESC"
+             FROM endpoints ORDER BY enrolled_at DESC",
         )
         .fetch_all(&self.pool)
         .await?;
 
         Ok(rows
             .into_iter()
-            .map(|(id, hostname, os_version, agent_version, enrolled_at,
-                   last_heartbeat_at, certificate_pem, certificate_expires_at,
-                   revoked_at, display_name)| {
-                Endpoint {
-                    id, hostname, os_version, agent_version, enrolled_at,
-                    last_heartbeat_at, certificate_pem, certificate_expires_at,
-                    revoked_at, display_name,
-                }
-            })
+            .map(
+                |(
+                    id,
+                    hostname,
+                    os_version,
+                    agent_version,
+                    enrolled_at,
+                    last_heartbeat_at,
+                    certificate_pem,
+                    certificate_expires_at,
+                    revoked_at,
+                    display_name,
+                )| {
+                    Endpoint {
+                        id,
+                        hostname,
+                        os_version,
+                        agent_version,
+                        enrolled_at,
+                        last_heartbeat_at,
+                        certificate_pem,
+                        certificate_expires_at,
+                        revoked_at,
+                        display_name,
+                    }
+                },
+            )
             .collect())
     }
 
     /// Check if an endpoint exists and is not revoked.
+    #[expect(
+        dead_code,
+        reason = "will be used when mTLS client-cert verification is wired up"
+    )]
     pub async fn is_endpoint_active(&self, id: &str) -> Result<bool, AppError> {
         let row = sqlx::query_as::<_, (i32,)>(
-            "SELECT COUNT(*) FROM endpoints WHERE id = ? AND revoked_at IS NULL"
+            "SELECT COUNT(*) FROM endpoints WHERE id = ? AND revoked_at IS NULL",
         )
         .bind(id)
         .fetch_one(&self.pool)
@@ -341,7 +418,7 @@ impl Storage {
             "INSERT INTO status_snapshots (endpoint_id, collected_at, snapshot_json) \
              VALUES (?, ?, ?) \
              ON CONFLICT(endpoint_id) DO UPDATE SET collected_at = excluded.collected_at, \
-             snapshot_json = excluded.snapshot_json"
+             snapshot_json = excluded.snapshot_json",
         )
         .bind(endpoint_id.to_string())
         .bind(collected_str)
@@ -357,7 +434,7 @@ impl Storage {
         endpoint_id: &EndpointId,
     ) -> Result<Option<OsStatusSnapshot>, AppError> {
         let row = sqlx::query_as::<_, (String,)>(
-            "SELECT snapshot_json FROM status_snapshots WHERE endpoint_id = ?"
+            "SELECT snapshot_json FROM status_snapshots WHERE endpoint_id = ?",
         )
         .bind(endpoint_id.to_string())
         .fetch_optional(&self.pool)
@@ -387,7 +464,7 @@ impl Storage {
 
         sqlx::query(
             "INSERT INTO commands (id, endpoint_id, issued_at, expires_at, payload_json) \
-             VALUES (?, ?, ?, ?, ?)"
+             VALUES (?, ?, ?, ?, ?)",
         )
         .bind(envelope.command_id.to_string())
         .bind(endpoint_id.to_string())
@@ -408,7 +485,7 @@ impl Storage {
             "SELECT id, issued_at, expires_at, payload_json \
              FROM commands \
              WHERE endpoint_id = ? AND delivered_at IS NULL AND completed_at IS NULL \
-             ORDER BY issued_at ASC"
+             ORDER BY issued_at ASC",
         )
         .bind(endpoint_id.to_string())
         .fetch_all(&self.pool)
@@ -475,7 +552,7 @@ impl Storage {
     ) -> Result<(), AppError> {
         sqlx::query(
             "INSERT INTO audit_events (id, endpoint_id, occurred_at, source, kind, message) \
-             VALUES (?, ?, ?, ?, ?, ?)"
+             VALUES (?, ?, ?, ?, ?, ?)",
         )
         .bind(id)
         .bind(endpoint_id)
@@ -489,13 +566,10 @@ impl Storage {
     }
 
     /// Get recent audit events, newest first.
-    pub async fn recent_audit_events(
-        &self,
-        limit: u32,
-    ) -> Result<Vec<StoredAuditEvent>, AppError> {
+    pub async fn recent_audit_events(&self, limit: u32) -> Result<Vec<StoredAuditEvent>, AppError> {
         let rows = sqlx::query_as::<_, (String, Option<String>, String, String, String, String)>(
             "SELECT id, endpoint_id, occurred_at, source, kind, message \
-             FROM audit_events ORDER BY occurred_at DESC LIMIT ?"
+             FROM audit_events ORDER BY occurred_at DESC LIMIT ?",
         )
         .bind(limit)
         .fetch_all(&self.pool)
@@ -503,14 +577,16 @@ impl Storage {
 
         Ok(rows
             .into_iter()
-            .map(|(id, endpoint_id, occurred_at, source, kind, message)| StoredAuditEvent {
-                id,
-                endpoint_id,
-                occurred_at,
-                source,
-                kind,
-                message,
-            })
+            .map(
+                |(id, endpoint_id, occurred_at, source, kind, message)| StoredAuditEvent {
+                    id,
+                    endpoint_id,
+                    occurred_at,
+                    source,
+                    kind,
+                    message,
+                },
+            )
             .collect())
     }
 
@@ -520,7 +596,7 @@ impl Storage {
     pub async fn create_admin_session(&self, session: &AdminSession) -> Result<(), AppError> {
         sqlx::query(
             "INSERT INTO admin_sessions (id, created_at, expires_at, csrf_token) \
-             VALUES (?, ?, ?, ?)"
+             VALUES (?, ?, ?, ?)",
         )
         .bind(&session.id)
         .bind(&session.created_at)
@@ -534,18 +610,20 @@ impl Storage {
     /// Look up an admin session by ID.
     pub async fn get_admin_session(&self, id: &str) -> Result<Option<AdminSession>, AppError> {
         let row = sqlx::query_as::<_, (String, String, String, String)>(
-            "SELECT id, created_at, expires_at, csrf_token FROM admin_sessions WHERE id = ?"
+            "SELECT id, created_at, expires_at, csrf_token FROM admin_sessions WHERE id = ?",
         )
         .bind(id)
         .fetch_optional(&self.pool)
         .await?;
 
-        Ok(row.map(|(id, created_at, expires_at, csrf_token)| AdminSession {
-            id,
-            created_at,
-            expires_at,
-            csrf_token,
-        }))
+        Ok(
+            row.map(|(id, created_at, expires_at, csrf_token)| AdminSession {
+                id,
+                created_at,
+                expires_at,
+                csrf_token,
+            }),
+        )
     }
 
     /// Delete an admin session.
@@ -561,12 +639,10 @@ impl Storage {
 
     /// Get an admin secret by key.
     pub async fn get_admin_secret(&self, key: &str) -> Result<Option<String>, AppError> {
-        let row = sqlx::query_as::<_, (String,)>(
-            "SELECT value FROM admin_secrets WHERE key = ?"
-        )
-        .bind(key)
-        .fetch_optional(&self.pool)
-        .await?;
+        let row = sqlx::query_as::<_, (String,)>("SELECT value FROM admin_secrets WHERE key = ?")
+            .bind(key)
+            .fetch_optional(&self.pool)
+            .await?;
         Ok(row.map(|(v,)| v))
     }
 
@@ -574,7 +650,7 @@ impl Storage {
     pub async fn set_admin_secret(&self, key: &str, value: &str) -> Result<(), AppError> {
         sqlx::query(
             "INSERT INTO admin_secrets (key, value) VALUES (?, ?) \
-             ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
         )
         .bind(key)
         .bind(value)
@@ -596,6 +672,10 @@ fn parse_time(s: &str) -> Result<OffsetDateTime, AppError> {
 
 /// Resolve the database path from a data directory, used by tests.
 #[must_use]
+#[expect(
+    dead_code,
+    reason = "utility function available for integration tests and future callers"
+)]
 pub fn db_path(data_dir: &Path) -> std::path::PathBuf {
     data_dir.join("ken.db")
 }

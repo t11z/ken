@@ -72,7 +72,9 @@ async fn enroll(
     // Generate endpoint identity and certificate
     let endpoint_id = EndpointId::new();
     let validity_days = state.config.enrollment.client_certificate_lifetime_days;
-    let signed = state.ca.sign_client_certificate(&endpoint_id, validity_days)?;
+    let signed = state
+        .ca
+        .sign_client_certificate(&endpoint_id, validity_days)?;
 
     let now = OffsetDateTime::now_utc();
     let now_str = format_time(now);

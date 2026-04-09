@@ -14,7 +14,6 @@ use uuid::Uuid;
 
 use ken_protocol::command::CommandOutcome;
 use ken_protocol::heartbeat::{Heartbeat, HeartbeatAck};
-use ken_protocol::ids::EndpointId;
 use ken_protocol::version;
 
 use crate::error::AppError;

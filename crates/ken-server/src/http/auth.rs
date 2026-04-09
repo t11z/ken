@@ -4,9 +4,8 @@
 //! token is generated and displayed once in the logs. The admin logs
 //! in with this token and receives a session cookie.
 
-use axum::extract::{FromRequestParts, State};
+use axum::extract::FromRequestParts;
 use axum::http::request::Parts;
-use axum::http::StatusCode;
 use axum::response::{IntoResponse, Redirect, Response};
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -17,7 +16,7 @@ use crate::storage::AdminSession;
 /// Cookie name for the admin session.
 pub const SESSION_COOKIE: &str = "ken_session";
 
-/// Key used to store the admin token hash in the admin_secrets table.
+/// Key used to store the admin token hash in the `admin_secrets` table.
 pub const ADMIN_TOKEN_KEY: &str = "admin_access_token_hash";
 
 /// Session duration in hours.
@@ -27,6 +26,10 @@ const SESSION_DURATION_HOURS: i64 = 8;
 #[derive(Debug, Clone)]
 pub struct AuthenticatedAdmin {
     pub session_id: String,
+    #[expect(
+        dead_code,
+        reason = "csrf_token will be used in Phase 2 for form protection"
+    )]
     pub csrf_token: String,
 }
 
@@ -47,9 +50,8 @@ where
 
         let session_id = extract_cookie(cookie_header, SESSION_COOKIE);
 
-        let session_id = match session_id {
-            Some(id) => id,
-            None => return Err(Redirect::to("/admin/login").into_response()),
+        let Some(session_id) = session_id else {
+            return Err(Redirect::to("/admin/login").into_response());
         };
 
         let session = app_state
@@ -122,7 +124,10 @@ pub async fn ensure_admin_token(state: &AppState) -> Result<(), crate::error::Ap
 }
 
 /// Verify a submitted token against the stored hash.
-pub async fn verify_token(state: &AppState, submitted: &str) -> Result<bool, crate::error::AppError> {
+pub async fn verify_token(
+    state: &AppState,
+    submitted: &str,
+) -> Result<bool, crate::error::AppError> {
     let stored_hash = state.storage.get_admin_secret(ADMIN_TOKEN_KEY).await?;
     match stored_hash {
         Some(hash) => Ok(hash == hash_token(submitted)),
@@ -130,7 +135,7 @@ pub async fn verify_token(state: &AppState, submitted: &str) -> Result<bool, cra
     }
 }
 
-/// Create a new admin session and return (session_id, csrf_token).
+/// Create a new admin session and return (`session_id`, `csrf_token`).
 pub async fn create_session(state: &AppState) -> Result<(String, String), crate::error::AppError> {
     let session_id = Uuid::new_v4().to_string();
     let csrf_token = Uuid::new_v4().to_string();
@@ -176,22 +181,25 @@ fn rand_bytes() -> [u8; 32] {
 }
 
 fn hex_encode(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
+    use std::fmt::Write;
+    bytes
+        .iter()
+        .fold(String::with_capacity(bytes.len() * 2), |mut s, b| {
+            let _ = write!(s, "{b:02x}");
+            s
+        })
 }
 
 /// Extract a cookie value by name from a Cookie header string.
-fn extract_cookie<'a>(header: &'a str, name: &str) -> Option<String> {
-    header
-        .split(';')
-        .map(str::trim)
-        .find_map(|pair| {
-            let (key, value) = pair.split_once('=')?;
-            if key.trim() == name {
-                Some(value.trim().to_string())
-            } else {
-                None
-            }
-        })
+fn extract_cookie(header: &str, name: &str) -> Option<String> {
+    header.split(';').map(str::trim).find_map(|pair| {
+        let (key, value) = pair.split_once('=')?;
+        if key.trim() == name {
+            Some(value.trim().to_string())
+        } else {
+            None
+        }
+    })
 }
 
 fn format_time(t: OffsetDateTime) -> String {

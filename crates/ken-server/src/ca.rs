@@ -85,11 +85,7 @@ impl Ca {
             // Generate and write server certificate
             let server_cert_path = &config.server_certificate_path;
             let server_key_path = &config.server_key_path;
-            ca.generate_and_write_server_cert(
-                server_hostname,
-                server_cert_path,
-                server_key_path,
-            )?;
+            ca.generate_and_write_server_cert(server_hostname, server_cert_path, server_key_path)?;
 
             Ok(ca)
         }
@@ -132,7 +128,8 @@ impl Ca {
 
         let now = OffsetDateTime::now_utc();
         params.not_before = now;
-        let expires_at = now + time::Duration::days(validity_days as i64);
+        let days = i64::try_from(validity_days).unwrap_or(i64::MAX);
+        let expires_at = now + time::Duration::days(days);
         params.not_after = expires_at;
 
         let issuer = self.make_issuer()?;
@@ -234,16 +231,22 @@ impl Ca {
 
         // SAN: the hostname, localhost, and loopback IP
         let mut sans = vec![
-            rcgen::SanType::DnsName(clean_hostname.clone().try_into().map_err(|e| {
-                AppError::Tls(format!("invalid hostname for SAN: {e}"))
-            })?),
-            rcgen::SanType::DnsName("localhost".to_string().try_into().map_err(|e| {
-                AppError::Tls(format!("invalid localhost SAN: {e}"))
-            })?),
+            rcgen::SanType::DnsName(
+                clean_hostname
+                    .clone()
+                    .try_into()
+                    .map_err(|e| AppError::Tls(format!("invalid hostname for SAN: {e}")))?,
+            ),
+            rcgen::SanType::DnsName(
+                "localhost"
+                    .to_string()
+                    .try_into()
+                    .map_err(|e| AppError::Tls(format!("invalid localhost SAN: {e}")))?,
+            ),
         ];
-        sans.push(rcgen::SanType::IpAddress(
-            std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
-        ));
+        sans.push(rcgen::SanType::IpAddress(std::net::IpAddr::V4(
+            std::net::Ipv4Addr::LOCALHOST,
+        )));
         params.subject_alt_names = sans;
 
         let now = OffsetDateTime::now_utc();
@@ -365,8 +368,12 @@ mod tests {
         let endpoint_id = EndpointId::new();
 
         // Sign two different clients — both should work
-        let cert1 = ca.sign_client_certificate(&endpoint_id, 365).expect("sign 1");
-        let cert2 = ca.sign_client_certificate(&endpoint_id, 30).expect("sign 2");
+        let cert1 = ca
+            .sign_client_certificate(&endpoint_id, 365)
+            .expect("sign 1");
+        let cert2 = ca
+            .sign_client_certificate(&endpoint_id, 30)
+            .expect("sign 2");
 
         assert_ne!(cert1.certificate_pem, cert2.certificate_pem);
         assert!(cert1.certificate_pem.contains("BEGIN CERTIFICATE"));

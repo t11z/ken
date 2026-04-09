@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 /// Top-level agent configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AgentConfig {
     /// Server connection settings.
     #[serde(default)]
@@ -27,30 +27,12 @@ pub struct AgentConfig {
     pub audit: AuditConfig,
 }
 
-impl Default for AgentConfig {
-    fn default() -> Self {
-        Self {
-            server: ServerConfig::default(),
-            heartbeat: HeartbeatConfig::default(),
-            audit: AuditConfig::default(),
-        }
-    }
-}
-
 /// Server connection configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ServerConfig {
     /// Server URL. Empty until enrollment.
     #[serde(default)]
     pub url: String,
-}
-
-impl Default for ServerConfig {
-    fn default() -> Self {
-        Self {
-            url: String::new(),
-        }
-    }
 }
 
 /// Heartbeat timing configuration.

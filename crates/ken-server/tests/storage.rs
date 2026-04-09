@@ -1,7 +1,7 @@
 //! Integration tests for the Storage layer.
 //!
 //! These tests exercise the database operations against an in-memory
-//! SQLite database to verify migrations and query correctness.
+//! `SQLite` database to verify migrations and query correctness.
 
 use ken_protocol::command::CommandPayload;
 use ken_protocol::ids::{CommandId, EndpointId, HeartbeatId};
@@ -43,7 +43,10 @@ async fn migrations_create_all_tables() {
 
     let table_names: Vec<&str> = tables.iter().map(|t| t.0.as_str()).collect();
 
-    assert!(table_names.contains(&"endpoints"), "missing endpoints table");
+    assert!(
+        table_names.contains(&"endpoints"),
+        "missing endpoints table"
+    );
     assert!(
         table_names.contains(&"enrollment_tokens"),
         "missing enrollment_tokens table"
@@ -86,15 +89,13 @@ async fn enrollment_token_lifecycle() {
     let expires = now.clone();
 
     // Create token
-    sqlx::query(
-        "INSERT INTO enrollment_tokens (token, created_at, expires_at) VALUES (?, ?, ?)",
-    )
-    .bind(token_val)
-    .bind(&now)
-    .bind(&expires)
-    .execute(&pool)
-    .await
-    .unwrap();
+    sqlx::query("INSERT INTO enrollment_tokens (token, created_at, expires_at) VALUES (?, ?, ?)")
+        .bind(token_val)
+        .bind(&now)
+        .bind(&expires)
+        .execute(&pool)
+        .await
+        .unwrap();
 
     // Fetch token
     let row: Option<(String,)> =
@@ -236,11 +237,12 @@ async fn heartbeat_and_status_snapshot() {
     .unwrap();
 
     // Fetch and deserialize snapshot
-    let row: (String,) = sqlx::query_as("SELECT snapshot_json FROM status_snapshots WHERE endpoint_id = ?")
-        .bind(endpoint_id.to_string())
-        .fetch_one(&pool)
-        .await
-        .unwrap();
+    let row: (String,) =
+        sqlx::query_as("SELECT snapshot_json FROM status_snapshots WHERE endpoint_id = ?")
+            .bind(endpoint_id.to_string())
+            .fetch_one(&pool)
+            .await
+            .unwrap();
 
     let loaded: OsStatusSnapshot = serde_json::from_str(&row.0).unwrap();
     assert_eq!(loaded.defender, None);
@@ -286,13 +288,12 @@ async fn command_queue_and_delivery() {
     .unwrap();
 
     // Fetch pending commands
-    let pending: Vec<(String,)> = sqlx::query_as(
-        "SELECT id FROM commands WHERE endpoint_id = ? AND delivered_at IS NULL"
-    )
-    .bind(endpoint_id.to_string())
-    .fetch_all(&pool)
-    .await
-    .unwrap();
+    let pending: Vec<(String,)> =
+        sqlx::query_as("SELECT id FROM commands WHERE endpoint_id = ? AND delivered_at IS NULL")
+            .bind(endpoint_id.to_string())
+            .fetch_all(&pool)
+            .await
+            .unwrap();
     assert_eq!(pending.len(), 1);
 
     // Mark delivered
@@ -304,12 +305,11 @@ async fn command_queue_and_delivery() {
         .unwrap();
 
     // Verify no pending
-    let pending: Vec<(String,)> = sqlx::query_as(
-        "SELECT id FROM commands WHERE endpoint_id = ? AND delivered_at IS NULL"
-    )
-    .bind(endpoint_id.to_string())
-    .fetch_all(&pool)
-    .await
-    .unwrap();
+    let pending: Vec<(String,)> =
+        sqlx::query_as("SELECT id FROM commands WHERE endpoint_id = ? AND delivered_at IS NULL")
+            .bind(endpoint_id.to_string())
+            .fetch_all(&pool)
+            .await
+            .unwrap();
     assert_eq!(pending.len(), 0);
 }

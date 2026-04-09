@@ -76,7 +76,7 @@ fn default_public_url() -> String {
 /// Storage configuration.
 #[derive(Debug, Clone, Deserialize)]
 pub struct StorageConfig {
-    /// Root directory for all persistent data (SQLite, CA keys, state).
+    /// Root directory for all persistent data (`SQLite`, CA keys, state).
     #[serde(default = "default_data_dir")]
     pub data_dir: PathBuf,
 }
@@ -95,6 +95,7 @@ fn default_data_dir() -> PathBuf {
 
 /// TLS certificate paths, resolved relative to `data_dir` if not absolute.
 #[derive(Debug, Clone, Deserialize)]
+#[allow(clippy::struct_field_names)] // All fields are paths by design
 pub struct TlsConfig {
     /// Path to the root CA certificate PEM file.
     #[serde(default = "default_ca_cert")]
@@ -172,7 +173,7 @@ fn default_cert_lifetime() -> u64 {
 /// Logging configuration.
 #[derive(Debug, Clone, Deserialize)]
 pub struct LoggingConfig {
-    /// Tracing filter level (e.g., "info", "debug", "ken_server=debug").
+    /// Tracing filter level (e.g., "info", "debug", "`ken_server=debug`").
     #[serde(default = "default_log_level")]
     pub level: String,
 

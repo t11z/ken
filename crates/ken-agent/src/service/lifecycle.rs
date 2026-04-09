@@ -8,12 +8,15 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 /// The Windows service name as registered with the SCM.
+#[allow(dead_code)]
 pub const SERVICE_NAME: &str = "KenAgent";
 
 /// The display name shown in services.msc.
+#[allow(dead_code)]
 pub const SERVICE_DISPLAY_NAME: &str = "Ken Agent";
 
 /// Service description.
+#[allow(dead_code)]
 pub const SERVICE_DESCRIPTION: &str =
     "Ken \u{2014} observability and consent-gated remote access for family PCs. https://ken.family";
 
@@ -38,6 +41,7 @@ pub async fn service_loop(shutdown: Arc<AtomicBool>) {
 ///
 /// Returns `true` if the kill-switch file exists, meaning a user
 /// previously activated it and the service should refuse to start.
+#[allow(dead_code)]
 #[must_use]
 pub fn is_kill_switch_active(kill_switch_path: &std::path::Path) -> bool {
     kill_switch_path.exists()
@@ -78,6 +82,7 @@ pub fn install_service() -> Result<(), anyhow::Error> {
 }
 
 #[cfg(not(windows))]
+#[allow(clippy::unnecessary_wraps)]
 pub fn install_service() -> Result<(), anyhow::Error> {
     println!("Service installation is only supported on Windows.");
     Ok(())
@@ -89,9 +94,9 @@ pub fn uninstall_service() -> Result<(), anyhow::Error> {
     use windows_service::service::ServiceAccess;
     use windows_service::service_manager::{ServiceManager, ServiceManagerAccess};
 
-    let manager =
-        ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
-    let service = manager.open_service(SERVICE_NAME, ServiceAccess::DELETE | ServiceAccess::STOP)?;
+    let manager = ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
+    let service =
+        manager.open_service(SERVICE_NAME, ServiceAccess::DELETE | ServiceAccess::STOP)?;
 
     // Try to stop the service first
     let _ = service.stop();
@@ -103,6 +108,7 @@ pub fn uninstall_service() -> Result<(), anyhow::Error> {
 }
 
 #[cfg(not(windows))]
+#[allow(clippy::unnecessary_wraps)]
 pub fn uninstall_service() -> Result<(), anyhow::Error> {
     println!("Service uninstallation is only supported on Windows.");
     Ok(())
