@@ -82,7 +82,6 @@ ken/
 │
 ├── docs/
 │   ├── adr/                            Architecture Decision Records
-│   │   ├── README.md                   index of ADRs
 │   │   ├── 0000-adr-format-and-lifecycle.md
 │   │   ├── 0001-what-ken-will-never-do.md
 │   │   └── ...                         future ADRs
