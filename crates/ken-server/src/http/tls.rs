@@ -172,8 +172,7 @@ pub fn build_server_tls_config(
     client_verifier: Option<Arc<dyn ClientCertVerifier>>,
 ) -> Result<rustls::ServerConfig, crate::error::AppError> {
     let cert_chain = pem_chain_to_der(server_cert_pem)?;
-    let key = rustls::pki_types::PrivateKeyDer::try_from(pem_key_to_der(server_key_pem)?)
-        .map_err(|e| crate::error::AppError::Tls(format!("invalid server private key: {e}")))?;
+    let key = pem_key_to_der(server_key_pem)?;
 
     let config = if let Some(verifier) = client_verifier {
         rustls::ServerConfig::builder_with_provider(Arc::new(default_provider()))
@@ -231,9 +230,12 @@ fn pem_to_der(pem: &str) -> Result<CertificateDer<'static>, crate::error::AppErr
 }
 
 /// Parse PEM certificate chain data to DER certificates.
+///
+/// Uses `rustls-pki-types`' `PemObject` trait directly (RUSTSEC-2025-0134
+/// advises against the now-unmaintained `rustls-pemfile` crate).
 fn pem_chain_to_der(pem: &str) -> Result<Vec<CertificateDer<'static>>, crate::error::AppError> {
-    let mut reader = std::io::BufReader::new(pem.as_bytes());
-    let certs = rustls_pemfile::certs(&mut reader)
+    use rustls::pki_types::pem::PemObject;
+    let certs: Vec<CertificateDer<'static>> = CertificateDer::pem_slice_iter(pem.as_bytes())
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| crate::error::AppError::Tls(format!("failed to parse PEM certs: {e}")))?;
 
@@ -245,30 +247,16 @@ fn pem_chain_to_der(pem: &str) -> Result<Vec<CertificateDer<'static>>, crate::er
     Ok(certs)
 }
 
-/// Parse a PEM private key to DER bytes.
-fn pem_key_to_der(pem: &str) -> Result<Vec<u8>, crate::error::AppError> {
-    let mut reader = std::io::BufReader::new(pem.as_bytes());
-
-    // Try PKCS8 first, then RSA, then EC
-    for item in std::iter::from_fn(|| rustls_pemfile::read_one(&mut reader).transpose()) {
-        match item {
-            Ok(rustls_pemfile::Item::Pkcs8Key(key)) => return Ok(key.secret_pkcs8_der().to_vec()),
-            Ok(rustls_pemfile::Item::Pkcs1Key(key)) => {
-                return Ok(key.secret_pkcs1_der().to_vec());
-            }
-            Ok(rustls_pemfile::Item::Sec1Key(key)) => return Ok(key.secret_sec1_der().to_vec()),
-            Ok(_) => {}
-            Err(e) => {
-                return Err(crate::error::AppError::Tls(format!(
-                    "failed to parse PEM key: {e}"
-                )));
-            }
-        }
-    }
-
-    Err(crate::error::AppError::Tls(
-        "no private key found in PEM data".to_string(),
-    ))
+/// Parse a PEM private key to DER.
+///
+/// Uses `rustls-pki-types`' `PemObject` trait directly.
+fn pem_key_to_der(
+    pem: &str,
+) -> Result<rustls::pki_types::PrivateKeyDer<'static>, crate::error::AppError> {
+    use rustls::pki_types::pem::PemObject;
+    use rustls::pki_types::PrivateKeyDer;
+    PrivateKeyDer::from_pem_slice(pem.as_bytes())
+        .map_err(|e| crate::error::AppError::Tls(format!("failed to parse PEM key: {e}")))
 }
 
 #[cfg(test)]
