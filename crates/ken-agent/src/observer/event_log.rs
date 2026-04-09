@@ -17,18 +17,13 @@ use ken_protocol::status::SecurityEvent;
 pub fn collect() -> Vec<SecurityEvent> {
     #[cfg(windows)]
     {
-        collect_windows().unwrap_or_default()
+        tracing::debug!("event log observer: EvtQuery not yet implemented");
+        Vec::new()
     }
     #[cfg(not(windows))]
     {
         Vec::new()
     }
-}
-
-#[cfg(windows)]
-fn collect_windows() -> Result<Vec<SecurityEvent>, anyhow::Error> {
-    tracing::debug!("event log observer: EvtQuery not yet implemented");
-    Ok(Vec::new())
 }
 
 /// Map a known event ID to a terse human-readable summary.
@@ -63,7 +58,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn collect_returns_empty_on_non_windows() {
+    fn collect_returns_empty() {
         assert!(collect().is_empty());
     }
 

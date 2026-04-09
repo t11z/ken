@@ -13,7 +13,12 @@ use ken_protocol::status::WindowsUpdateStatus;
 pub fn collect() -> Option<WindowsUpdateStatus> {
     #[cfg(windows)]
     {
-        collect_windows().ok().flatten()
+        // Phase 1: read LastSuccessTime from registry at
+        // HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\Results\
+        //
+        // Pending update counts require the WUA COM API (issue #4).
+        tracing::debug!("windows update observer: registry query not yet implemented");
+        None
     }
     #[cfg(not(windows))]
     {
@@ -21,22 +26,12 @@ pub fn collect() -> Option<WindowsUpdateStatus> {
     }
 }
 
-#[cfg(windows)]
-fn collect_windows() -> Result<Option<WindowsUpdateStatus>, anyhow::Error> {
-    // Phase 1: read LastSuccessTime from registry at
-    // HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\Results\
-    //
-    // Pending update counts require the WUA COM API (issue #4).
-    tracing::debug!("windows update observer: registry query not yet implemented");
-    Ok(None)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn collect_returns_none_on_non_windows() {
+    fn collect_returns_none() {
         assert!(collect().is_none());
     }
 }

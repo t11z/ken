@@ -9,7 +9,8 @@ use ken_protocol::status::BitLockerStatus;
 pub fn collect() -> Option<BitLockerStatus> {
     #[cfg(windows)]
     {
-        collect_windows().ok().flatten()
+        tracing::debug!("bitlocker observer: WMI query not yet implemented");
+        None
     }
     #[cfg(not(windows))]
     {
@@ -17,18 +18,12 @@ pub fn collect() -> Option<BitLockerStatus> {
     }
 }
 
-#[cfg(windows)]
-fn collect_windows() -> Result<Option<BitLockerStatus>, anyhow::Error> {
-    tracing::debug!("bitlocker observer: WMI query not yet implemented");
-    Ok(None)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn collect_returns_none_on_non_windows() {
+    fn collect_returns_none() {
         assert!(collect().is_none());
     }
 }
