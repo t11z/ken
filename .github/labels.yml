@@ -116,6 +116,14 @@
   color: "333333"
   description: Touches a Tier 2 scope boundary in ADR-0001; requires an ADR to change
 
+# ─── KenBot ───────────────────────────────────────────────────────
+# Labels in this cluster are owned by the KenBot automation (ADR-0015).
+# Do not set or remove these labels manually except as part of the
+# retraction workflow described in ADR-0015.
+- name: kenbot/analyzed
+  color: "c5def5"
+  description: KenBot has produced a triage analysis on this issue
+
 # ─── Community ─────────────────────────────────────────────────────
 - name: good first issue
   color: "7057ff"

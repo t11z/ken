@@ -1,0 +1,277 @@
+# KenBot — automated issue triage workflow.
+#
+# Authoritative source for behavior: docs/adr/0015-automated-issue-triage-with-kenbot.md
+# Setup instructions: docs/maintainer/kenbot-setup.md
+#
+# This workflow:
+#  - reacts only to status/needs-triage being added to an issue
+#  - exits silently for issues with full-exclusion labels (see ADR-0015)
+#  - operates under the kenbot[bot] identity via a GitHub App token
+#  - never pushes to main, never merges, never modifies ADRs or labels.yml
+#
+# Changes to this workflow's behavior require a superseding ADR.
+
+name: kenbot
+
+on:
+  issues:
+    types: [labeled]
+
+concurrency:
+  group: kenbot-issue-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+jobs:
+  triage:
+    name: triage
+    runs-on: ubuntu-latest
+    if: github.event.label.name == 'status/needs-triage'
+    steps:
+      - name: check exclusions and idempotency
+        id: gate
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: labels } = await github.rest.issues.listLabelsOnIssue({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number
+            });
+            const names = labels.map(l => l.name);
+
+            // Idempotency: exit if already analyzed.
+            if (names.includes('kenbot/analyzed')) {
+              core.info('Issue already has kenbot/analyzed — skipping.');
+              core.setOutput('skip', 'true');
+              return;
+            }
+
+            // Full-exclusion labels (ADR-0015 §Exclusions from any action).
+            const excluded = [
+              'trust/tier-1',
+              'trust/tier-2',
+              'status/needs-adr',
+              'status/blocked',
+              'status/wontfix',
+              'type/adr'
+            ];
+            if (names.some(n => excluded.includes(n))) {
+              core.info(`Issue carries an exclusion label — skipping.`);
+              core.setOutput('skip', 'true');
+              return;
+            }
+
+            core.setOutput('skip', 'false');
+
+      - name: generate app token
+        if: steps.gate.outputs.skip != 'true'
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.KENBOT_APP_ID }}
+          private-key: ${{ secrets.KENBOT_APP_PRIVATE_KEY }}
+
+      - name: checkout
+        if: steps.gate.outputs.skip != 'true'
+        uses: actions/checkout@v4
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: determine action mode
+        if: steps.gate.outputs.skip != 'true'
+        id: mode
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: labels } = await github.rest.issues.listLabelsOnIssue({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number
+            });
+            const names = labels.map(l => l.name);
+
+            // Labels that block the autonomous-fix path.
+            const fixBlockers = [
+              'priority/critical',
+              'trust/tier-1',
+              'trust/tier-2',
+              'status/needs-adr'
+            ];
+            const blocked = names.some(n => fixBlockers.includes(n));
+
+            // Fix-eligible label combinations (ADR-0015 §Exclusions from
+            // the autonomous-fix path).
+            const isDocsType = names.includes('type/docs');
+            const isCiBug    = names.includes('type/bug') && names.includes('area/ci');
+
+            if (!blocked && (isDocsType || isCiBug)) {
+              core.setOutput('mode', 'fix');
+            } else {
+              core.setOutput('mode', 'analyze-only');
+            }
+            const mode = (!blocked && (isDocsType || isCiBug)) ? 'fix' : 'analyze-only';
+            core.info(`Action mode: ${mode}`);
+
+      - name: build prompt
+        if: steps.gate.outputs.skip != 'true'
+        id: prompt
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const mode = '${{ steps.mode.outputs.mode }}';
+            const issue = context.payload.issue;
+            const labels = issue.labels.map(l => l.name).join(', ');
+
+            let modeInstruction;
+            if (mode === 'fix') {
+              modeInstruction = [
+                'Produce the structured analysis comment as described above.',
+                'Then, if your analysis concludes that the fix does not require',
+                'an architectural decision not already recorded as an Accepted ADR,',
+                'produce a minimal code fix.',
+                'If your analysis concludes that an ADR is missing, do NOT produce',
+                'a fix — instead note which decision is missing.'
+              ].join(' ');
+            } else {
+              modeInstruction = [
+                'Produce a structured analysis comment per the schema in ADR-0015,',
+                "section 'Comment schema':",
+                '1. A short restatement of the issue in your own words.',
+                '2. Your classification against the label taxonomy, with any',
+                '   suggested missing labels noted as proposals (not applied).',
+                '3. An enumeration of solution options with explicit pro/con for each.',
+                '4. A recommended option with reasoning.',
+                'Do NOT write or modify any code.'
+              ].join('\n');
+            }
+
+            const prompt = [
+              'You are KenBot, the automated triage assistant for the repository t11z/ken.',
+              'Your behavioral rules are defined in docs/adr/0015-automated-issue-triage-with-kenbot.md.',
+              '',
+              `Issue title: ${issue.title}`,
+              `Issue body: ${issue.body || '(empty)'}`,
+              `Current labels: ${labels}`,
+              `Action mode: ${mode}`,
+              '',
+              `YOUR TASK (${mode}):`,
+              '',
+              modeInstruction,
+              '',
+              'HARD CONSTRAINTS:',
+              '- You MUST NOT modify any of these files or directories: docs/adr/,',
+              '  .github/labels.yml, .github/workflows/, CLAUDE.md, .claude/skills/.',
+              '- If the fix requires changes in any of those paths, state this in',
+              '  your comment and do not produce a fix.'
+            ].join('\n');
+
+            core.setOutput('prompt', prompt);
+
+      - name: run claude code
+        if: steps.gate.outputs.skip != 'true'
+        uses: anthropics/claude-code-action@beta
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          direct_prompt: ${{ steps.prompt.outputs.prompt }}
+          allowed_tools: ${{ steps.mode.outputs.mode == 'fix' && 'Bash,Read,Write,Edit,Glob,Grep' || 'Read,Glob,Grep' }}
+
+      - name: update labels
+        if: steps.gate.outputs.skip != 'true'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          script: |
+            const issue_number = context.issue.number;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const mode = '${{ steps.mode.outputs.mode }}';
+
+            // Remove status/needs-triage.
+            try {
+              await github.rest.issues.removeLabel({
+                owner, repo, issue_number,
+                name: 'status/needs-triage'
+              });
+            } catch (e) {
+              // Label may already have been removed; ignore 404.
+              if (e.status !== 404) throw e;
+            }
+
+            // Add kenbot/analyzed.
+            await github.rest.issues.addLabels({
+              owner, repo, issue_number,
+              labels: ['kenbot/analyzed']
+            });
+
+            // Add mode-appropriate status label.
+            if (mode === 'fix') {
+              await github.rest.issues.addLabels({
+                owner, repo, issue_number,
+                labels: ['status/in-progress']
+              });
+            } else {
+              await github.rest.issues.addLabels({
+                owner, repo, issue_number,
+                labels: ['status/needs-discussion']
+              });
+            }
+
+      - name: create fix branch and draft PR
+        if: steps.gate.outputs.skip != 'true' && steps.mode.outputs.mode == 'fix'
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        shell: bash
+        run: |
+          ISSUE_NUMBER="${{ github.event.issue.number }}"
+          ISSUE_TITLE="${{ github.event.issue.title }}"
+
+          # Generate slug: lowercase, alphanumeric + hyphens, max 40 chars.
+          SLUG=$(echo "$ISSUE_TITLE" \
+            | tr '[:upper:]' '[:lower:]' \
+            | sed 's/[^a-z0-9]/-/g' \
+            | sed 's/--*/-/g' \
+            | sed 's/^-//;s/-$//' \
+            | cut -c1-40)
+          BRANCH="kenbot/issue-${ISSUE_NUMBER}-${SLUG}"
+
+          git checkout -b "$BRANCH"
+          git add -A
+
+          # If there are no staged changes, skip PR creation.
+          if git diff --cached --quiet; then
+            echo "No changes to commit — skipping PR creation."
+            exit 0
+          fi
+
+          git config user.name "kenbot[bot]"
+          git config user.email "kenbot[bot]@users.noreply.github.com"
+          COMMIT_MSG="fix: address #${ISSUE_NUMBER}
+
+          Automated fix produced by KenBot (ADR-0015).
+
+          Refs #${ISSUE_NUMBER}"
+          git commit -m "$COMMIT_MSG"
+
+          git push -u origin HEAD
+
+          PR_BODY="## KenBot automated fix
+
+          This draft PR was opened automatically by KenBot in response to #${ISSUE_NUMBER}.
+
+          **Review required.** KenBot does not merge; the architect must review and merge.
+
+          Refs #${ISSUE_NUMBER}
+
+          ---
+          *Governed by [ADR-0015](../docs/adr/0015-automated-issue-triage-with-kenbot.md).*"
+
+          gh pr create \
+            --draft \
+            --title "fix: address #${ISSUE_NUMBER} — ${ISSUE_TITLE}" \
+            --body "$PR_BODY"
