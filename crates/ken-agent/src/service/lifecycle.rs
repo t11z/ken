@@ -53,7 +53,7 @@ pub async fn service_loop(
     // Per ADR-0009 and ADR-0010, the SYSTEM service launches
     // `ken-agent.exe tray` in each active interactive session.
     #[cfg(windows)]
-    let _tray_session_handler = {
+    {
         use crate::service::session;
 
         let audit = Arc::new(
@@ -87,7 +87,7 @@ pub async fn service_loop(
                     Ok(SessionChangeEvent::Logon { session_id }) => {
                         session::handle_session_logon(
                             session_id,
-                            ken_protocol::audit::TrayLaunchTrigger::SessionLogon,
+                            &ken_protocol::audit::TrayLaunchTrigger::SessionLogon,
                             &mut tray_map,
                             &session_audit,
                         );
@@ -95,7 +95,7 @@ pub async fn service_loop(
                     Ok(SessionChangeEvent::Logoff { session_id }) => {
                         session::handle_session_logoff(session_id, &mut tray_map, &session_audit);
                     }
-                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
                     Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
                 }
             }
@@ -105,10 +105,7 @@ pub async fn service_loop(
             session::terminate_all_tray_processes(&mut tray_map, &session_audit);
             tracing::info!("session-change handler exiting");
         });
-    };
-    // On non-Windows, session management is a no-op (no tray app).
-    #[cfg(not(windows))]
-    {}
+    }
 
     // Run the worker loop (heartbeat, commands, status collection).
     // The worker loop handles its own kill-switch checks internally.

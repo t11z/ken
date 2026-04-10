@@ -34,6 +34,12 @@ pub struct TrayProcessInfo {
     pub pid: u32,
 }
 
+// SAFETY: Windows HANDLE values are kernel object handles that are
+// explicitly safe to use from any thread. The same pattern is used
+// by SecurityDescriptorHolder in crates/ken-agent/src/ipc/server.rs.
+#[cfg(windows)]
+unsafe impl Send for TrayProcessInfo {}
+
 // TODO: The service does not currently detect when a tray process exits
 // on its own (crash, user kills it via Task Manager). The map entry
 // becomes stale. Restart-on-crash is a separate issue, not part of the

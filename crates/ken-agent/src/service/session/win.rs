@@ -250,7 +250,7 @@ pub fn terminate_tray_process(info: &TrayProcessInfo) {
 /// against duplicate events), the old process is terminated first.
 pub fn handle_session_logon(
     session_id: u32,
-    trigger: TrayLaunchTrigger,
+    trigger: &TrayLaunchTrigger,
     map: &mut TrayProcessMap,
     audit: &Arc<AuditLogger>,
 ) {
@@ -362,6 +362,6 @@ pub fn launch_for_active_sessions(map: &mut TrayProcessMap, audit: &Arc<AuditLog
         "found active interactive sessions at startup"
     );
     for session_id in sessions {
-        handle_session_logon(session_id, TrayLaunchTrigger::Startup, map, audit);
+        handle_session_logon(session_id, &TrayLaunchTrigger::Startup, map, audit);
     }
 }
