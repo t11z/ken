@@ -11,7 +11,7 @@ use ken_protocol::audit::{AuditEventKind, TrayLaunchTrigger, TrayTerminationReas
 use crate::audit::AuditLogger;
 use crate::service::session::{TrayProcessInfo, TrayProcessMap};
 
-use windows::core::PWSTR;
+use windows::core::{PCWSTR, PWSTR};
 use windows::Win32::Foundation::{CloseHandle, HANDLE, WAIT_OBJECT_0};
 use windows::Win32::Security::{
     DuplicateTokenEx, SecurityImpersonation, TokenPrimary, TOKEN_ALL_ACCESS,
@@ -153,17 +153,21 @@ pub fn launch_tray_in_session(session_id: u32) -> Result<TrayProcessInfo, String
     // CreateProcessAsUserW takes Option<HANDLE> for htoken,
     // Option<PWSTR> for lpcommandline, and Option<*const c_void>
     // for lpenvironment.
+    // CreateProcessAsUserW generic params P1 (lpapplicationname) and
+    // P8 (lpcurrentdirectory) need explicit types. None::<&PCWSTR>
+    // satisfies Param<PCWSTR> via the Option<&T> blanket impl and
+    // produces a null pointer.
     let create_result = unsafe {
         CreateProcessAsUserW(
             Some(primary_token),
-            None, // application name — derived from command line
+            None::<&PCWSTR>, // application name — derived from command line
             Some(PWSTR(command_line_wide.as_mut_ptr())),
             None, // process security attributes
             None, // thread security attributes
             false,
             CREATE_UNICODE_ENVIRONMENT | CREATE_NO_WINDOW,
             Some(env_block.cast_const()),
-            None, // current directory — inherit
+            None::<&PCWSTR>, // current directory — inherit
             &raw const startup_info,
             &raw mut process_info,
         )
