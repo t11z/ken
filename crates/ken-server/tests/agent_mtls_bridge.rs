@@ -159,11 +159,9 @@ impl AgentTestServer {
 
         // --- Server TLS + acceptor ---
         let ca = Arc::new(ca);
-        let client_verifier = Arc::new(
-            http::tls::KenClientCertVerifier::new(storage.clone(), &ca).unwrap(),
-        );
-        let server_cert_pem =
-            std::fs::read_to_string(&tls_config.server_certificate_path).unwrap();
+        let client_verifier =
+            Arc::new(http::tls::KenClientCertVerifier::new(storage.clone(), &ca).unwrap());
+        let server_cert_pem = std::fs::read_to_string(&tls_config.server_certificate_path).unwrap();
         let server_key_pem = std::fs::read_to_string(&tls_config.server_key_path).unwrap();
         let server_tls_config = http::tls::build_server_tls_config(
             &server_cert_pem,
@@ -221,7 +219,10 @@ impl AgentTestServer {
             .fetch_one(&self.raw_pool)
             .await
             .unwrap();
-        assert_eq!(count.0, 0, "no heartbeat row should exist after a rejected handshake");
+        assert_eq!(
+            count.0, 0,
+            "no heartbeat row should exist after a rejected handshake"
+        );
     }
 }
 
@@ -328,7 +329,10 @@ async fn revoked_endpoint_is_rejected_at_handshake() {
 
     let result = tokio::time::timeout(
         std::time::Duration::from_secs(2),
-        client.post(s.heartbeat_url()).json(&make_heartbeat()).send(),
+        client
+            .post(s.heartbeat_url())
+            .json(&make_heartbeat())
+            .send(),
     )
     .await
     .expect("request timed out");
@@ -370,7 +374,10 @@ async fn wrong_ca_is_rejected_at_handshake() {
 
     let result = tokio::time::timeout(
         std::time::Duration::from_secs(2),
-        client.post(s.heartbeat_url()).json(&make_heartbeat()).send(),
+        client
+            .post(s.heartbeat_url())
+            .json(&make_heartbeat())
+            .send(),
     )
     .await
     .expect("request timed out");
@@ -426,8 +433,7 @@ async fn cert_with_expired_notafter_is_rejected_at_handshake() {
     params.not_after = yesterday;
 
     let ca_key = rcgen::KeyPair::from_pem(&s.ca_key_pem).unwrap();
-    let issuer =
-        rcgen::Issuer::from_ca_cert_pem(s.ca.root_certificate_pem(), &ca_key).unwrap();
+    let issuer = rcgen::Issuer::from_ca_cert_pem(s.ca.root_certificate_pem(), &ca_key).unwrap();
     let cert = params.signed_by(&client_key, &issuer).unwrap();
 
     let cert_pem = cert.pem();
@@ -437,7 +443,10 @@ async fn cert_with_expired_notafter_is_rejected_at_handshake() {
 
     let result = tokio::time::timeout(
         std::time::Duration::from_secs(2),
-        client.post(s.heartbeat_url()).json(&make_heartbeat()).send(),
+        client
+            .post(s.heartbeat_url())
+            .json(&make_heartbeat())
+            .send(),
     )
     .await
     .expect("request timed out");
@@ -485,7 +494,10 @@ async fn endpoint_with_expired_db_record_is_rejected_at_handshake() {
 
     let result = tokio::time::timeout(
         std::time::Duration::from_secs(2),
-        client.post(s.heartbeat_url()).json(&make_heartbeat()).send(),
+        client
+            .post(s.heartbeat_url())
+            .json(&make_heartbeat())
+            .send(),
     )
     .await
     .expect("request timed out");
@@ -529,8 +541,7 @@ async fn client_cert_with_non_uuid_cn_is_rejected_at_handshake() {
     params.not_after = now + time::Duration::days(365);
 
     let ca_key = rcgen::KeyPair::from_pem(&s.ca_key_pem).unwrap();
-    let issuer =
-        rcgen::Issuer::from_ca_cert_pem(s.ca.root_certificate_pem(), &ca_key).unwrap();
+    let issuer = rcgen::Issuer::from_ca_cert_pem(s.ca.root_certificate_pem(), &ca_key).unwrap();
     let cert = params.signed_by(&client_key, &issuer).unwrap();
 
     let cert_pem = cert.pem();
@@ -540,7 +551,10 @@ async fn client_cert_with_non_uuid_cn_is_rejected_at_handshake() {
 
     let result = tokio::time::timeout(
         std::time::Duration::from_secs(2),
-        client.post(s.heartbeat_url()).json(&make_heartbeat()).send(),
+        client
+            .post(s.heartbeat_url())
+            .json(&make_heartbeat())
+            .send(),
     )
     .await
     .expect("request timed out");
@@ -572,7 +586,10 @@ async fn client_cert_with_unknown_endpoint_uuid_is_rejected_at_handshake() {
 
     let result = tokio::time::timeout(
         std::time::Duration::from_secs(2),
-        client.post(s.heartbeat_url()).json(&make_heartbeat()).send(),
+        client
+            .post(s.heartbeat_url())
+            .json(&make_heartbeat())
+            .send(),
     )
     .await
     .expect("request timed out");
@@ -606,8 +623,7 @@ async fn admin_listener_does_not_require_client_cert() {
     storage.migrate().await.unwrap();
 
     // Admin listener: server TLS only, no client cert required.
-    let server_cert_pem =
-        std::fs::read_to_string(&tls_config.server_certificate_path).unwrap();
+    let server_cert_pem = std::fs::read_to_string(&tls_config.server_certificate_path).unwrap();
     let server_key_pem = std::fs::read_to_string(&tls_config.server_key_path).unwrap();
     let admin_tls_config =
         http::tls::build_server_tls_config(&server_cert_pem, &server_key_pem, None).unwrap();
@@ -627,14 +643,11 @@ async fn admin_listener_does_not_require_client_cert() {
     let server_handle = handle.clone();
 
     tokio::spawn(async move {
-        axum_server::bind_rustls(
-            "127.0.0.1:0".parse::<SocketAddr>().unwrap(),
-            rustls_config,
-        )
-        .handle(server_handle)
-        .serve(admin_app.into_make_service())
-        .await
-        .unwrap();
+        axum_server::bind_rustls("127.0.0.1:0".parse::<SocketAddr>().unwrap(), rustls_config)
+            .handle(server_handle)
+            .serve(admin_app.into_make_service())
+            .await
+            .unwrap();
     });
 
     let addr = handle.listening().await.unwrap();
