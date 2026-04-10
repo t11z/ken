@@ -177,6 +177,7 @@ jobs:
         uses: anthropics/claude-code-action@beta
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ steps.app-token.outputs.token }}
           direct_prompt: ${{ steps.prompt.outputs.prompt }}
           allowed_tools: ${{ steps.mode.outputs.mode == 'fix' && 'Bash,Read,Write,Edit,Glob,Grep' || 'Read,Glob,Grep' }}
 
@@ -226,10 +227,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
         shell: bash
         run: |
-          ISSUE_NUMBER="${{ github.event.issue.number }}"
-          ISSUE_TITLE="${{ github.event.issue.title }}"
 
           # Generate slug: lowercase, alphanumeric + hyphens, max 40 chars.
           SLUG=$(echo "$ISSUE_TITLE" \
