@@ -5,6 +5,57 @@
 # under ~200 KB. Add new topics as new conversation areas open up;
 # do not expand existing ones to cover unrelated questions.
 
+[topics.audit-events]
+description = """
+Audit event type definitions, the local audit log write path, and any
+serialization or transport surface where audit events cross a boundary
+(disk, IPC, network). Used to determine whether adding a new audit event
+variant is a pure implementation detail or whether it touches a wire format
+or schema that requires architectural review.
+"""
+
+include = [
+  # Audit event type definitions — wherever they live
+  "crates/ken-agent/src/audit/**/*.rs",
+  "crates/ken-agent/src/audit.rs",
+  "crates/ken-protocol/src/audit/**/*.rs",
+  "crates/ken-protocol/src/audit.rs",
+
+  # Anything in the protocol crate that mentions audit, events, or heartbeat
+  # payloads — to catch shared types between agent and server
+  "crates/ken-protocol/src/lib.rs",
+  "crates/ken-protocol/src/heartbeat.rs",
+  "crates/ken-protocol/src/messages.rs",
+
+  # Server-side ingest path — to see whether audit events arrive over the wire
+  # and whether the server validates them against a schema
+  "crates/ken-server/src/handlers/heartbeat.rs",
+  "crates/ken-server/src/handlers/audit.rs",
+  "crates/ken-server/src/db/audit.rs",
+  "crates/ken-server/src/db/schema.rs",
+  "crates/ken-server/migrations/**/*.sql",
+
+  # Crate-level conventions for both crates
+  "crates/ken-agent/CLAUDE.md",
+  "crates/ken-protocol/CLAUDE.md",
+  "crates/ken-server/CLAUDE.md",
+]
+
+# Grep patterns to surface call sites even if the file paths above miss them
+grep_patterns = [
+  "AuditEvent",
+  "audit_log",
+  "AuditLog",
+  "write_audit",
+  "log_audit",
+  "audit::",
+]
+
+exclude = [
+  "**/tests/**",
+  "**/target/**",
+]
+
 [topics.agent-observers]
 description = """
 Agent-side observer subsystem: the trait or interface that defines an
