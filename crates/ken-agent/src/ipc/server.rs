@@ -62,9 +62,10 @@ pub fn run(
     use windows::core::PCWSTR;
     use windows::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
     use windows::Win32::Security::SECURITY_ATTRIBUTES;
+    use windows::Win32::Storage::FileSystem::PIPE_ACCESS_DUPLEX;
     use windows::Win32::System::Pipes::{
-        ConnectNamedPipe, CreateNamedPipeW, DisconnectNamedPipe, PIPE_ACCESS_DUPLEX,
-        PIPE_READMODE_MESSAGE, PIPE_TYPE_MESSAGE, PIPE_WAIT,
+        ConnectNamedPipe, CreateNamedPipeW, DisconnectNamedPipe, PIPE_READMODE_MESSAGE,
+        PIPE_TYPE_MESSAGE, PIPE_WAIT,
     };
     use windows::Win32::System::RemoteDesktop::WTSGetActiveConsoleSessionId;
 
@@ -340,18 +341,18 @@ impl SecurityDescriptorHolder {
 /// `GENERIC_READ | GENERIC_WRITE` and SYSTEM full control.
 #[allow(clippy::too_many_lines)] // Complex Windows security setup; splitting further reduces clarity
 fn build_security_descriptor(session_id: u32) -> Result<SecurityDescriptorHolder, anyhow::Error> {
-    use windows::Win32::Foundation::{CloseHandle, PSID};
+    use windows::Win32::Foundation::CloseHandle;
     use windows::Win32::Security::Authorization::{
-        SetEntriesInAclW, EXPLICIT_ACCESS_W, NO_MULTIPLE_TRUSTEE, SET_ACCESS,
-        SUB_CONTAINERS_AND_OBJECTS_INHERIT, TRUSTEE_IS_SID, TRUSTEE_IS_USER,
-        TRUSTEE_IS_WELL_KNOWN_GROUP, TRUSTEE_W,
+        SetEntriesInAclW, EXPLICIT_ACCESS_W, NO_MULTIPLE_TRUSTEE, SET_ACCESS, TRUSTEE_IS_SID,
+        TRUSTEE_IS_USER, TRUSTEE_IS_WELL_KNOWN_GROUP, TRUSTEE_W,
     };
     use windows::Win32::Security::{
         AllocateAndInitializeSid, CopySid, FreeSid, GetLengthSid, GetTokenInformation,
         InitializeSecurityDescriptor, SetSecurityDescriptorDacl, TokenUser, PSECURITY_DESCRIPTOR,
-        SECURITY_DESCRIPTOR_REVISION, SID_IDENTIFIER_AUTHORITY, TOKEN_USER,
+        PSID, SID_IDENTIFIER_AUTHORITY, SUB_CONTAINERS_AND_OBJECTS_INHERIT, TOKEN_USER,
     };
     use windows::Win32::System::RemoteDesktop::WTSQueryUserToken;
+    use windows::Win32::System::SystemServices::SECURITY_DESCRIPTOR_REVISION;
 
     // --- get user SID from session token ---
     let mut user_token = windows::Win32::Foundation::HANDLE::default();
