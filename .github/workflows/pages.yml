@@ -41,27 +41,49 @@ jobs:
           # Copy documentation sections into the book layout.
           cp -r docs site/src/docs
 
-          # Generate a minimal SUMMARY.md that lists the visible sections.
-          # The book layout is intentionally small: landing page, ADRs,
-          # architecture, user docs. Contributors can expand it through
-          # normal PRs when new documentation lands.
-          cat > site/src/SUMMARY.md <<'EOF'
-          # Summary
+          # Generate SUMMARY.md dynamically from the docs present on disk so
+          # that new ADRs and documentation sections are included automatically
+          # without manual workflow updates.
+          {
+            printf '# Summary\n\n'
+            printf '[Ken](README.md)\n\n'
 
-          [Ken](README.md)
+            printf '# Architecture Decision Records\n\n'
+            for f in site/src/docs/adr/*.md; do
+              [ -f "$f" ] || continue
+              title=$(grep -m1 '^# ' "$f" | sed 's/^# //')
+              printf -- '- [%s](docs/adr/%s)\n' "$title" "$(basename "$f")"
+            done
+            printf '\n'
 
-          # Architecture Decision Records
+            printf '# Architecture\n\n'
+            for f in site/src/docs/architecture/*.md; do
+              [ -f "$f" ] || continue
+              title=$(grep -m1 '^# ' "$f" | sed 's/^# //')
+              printf -- '- [%s](docs/architecture/%s)\n' "$title" "$(basename "$f")"
+            done
+            printf '\n'
 
-          - [ADR-0000: ADR Format and Lifecycle](docs/adr/0000-adr-format-and-lifecycle.md)
-          - [ADR-0001: Trust Boundaries and Current Scope](docs/adr/0001-trust-boundaries-and-current-scope.md)
+            if compgen -G 'site/src/docs/user/*.md' > /dev/null 2>&1; then
+              printf '# For Users\n\n'
+              for f in site/src/docs/user/*.md; do
+                [ -f "$f" ] || continue
+                title=$(grep -m1 '^# ' "$f" | sed 's/^# //')
+                printf -- '- [%s](docs/user/%s)\n' "$title" "$(basename "$f")"
+              done
+              printf '\n'
+            fi
 
-          # Architecture
-
-          - [Repository Structure](docs/architecture/repository-structure.md)
-
-          # For Users
-
-          EOF
+            if compgen -G 'site/src/docs/maintainer/*.md' > /dev/null 2>&1; then
+              printf '# Maintainer\n\n'
+              for f in site/src/docs/maintainer/*.md; do
+                [ -f "$f" ] || continue
+                title=$(grep -m1 '^# ' "$f" | sed 's/^# //')
+                printf -- '- [%s](docs/maintainer/%s)\n' "$title" "$(basename "$f")"
+              done
+              printf '\n'
+            fi
+          } > site/src/SUMMARY.md
 
           cat > site/book.toml <<'EOF'
           [book]
