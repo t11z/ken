@@ -53,6 +53,7 @@ pub fn pipe_name(session_id: u32) -> String {
 /// `tokio::task::spawn_blocking`. It creates a named pipe, sets
 /// up security, and loops accepting connections.
 #[allow(clippy::too_many_lines)] // Windows pipe server loop: the connection lifecycle is clearest as a single function
+#[allow(clippy::needless_pass_by_value)] // Arc parameters are moved from a spawned closure
 pub fn run(
     consent_state: SharedConsentState,
     shutdown: Arc<AtomicBool>,
@@ -107,7 +108,7 @@ pub fn run(
                 8192, // output buffer size
                 8192, // input buffer size
                 0,    // default timeout
-                Some(&sa),
+                Some(&raw const sa),
             )
         };
 
@@ -203,7 +204,9 @@ fn handle_get_status(paths: &crate::config::DataPaths) -> IpcResponse {
 }
 
 fn handle_get_pending_consent(consent_state: &SharedConsentState) -> IpcResponse {
-    let guard = consent_state.lock().unwrap_or_else(|e| e.into_inner());
+    let guard = consent_state
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     match &*guard {
         Some(pending) => IpcResponse::ConsentPending {
             command_id: pending.command_id,
@@ -220,7 +223,9 @@ fn handle_submit_consent(
     granted: bool,
     audit: &AuditLogger,
 ) -> IpcResponse {
-    let mut guard = consent_state.lock().unwrap_or_else(|e| e.into_inner());
+    let mut guard = consent_state
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     match guard.take() {
         Some(pending) if pending.command_id == *command_id => {
             let kind = if granted {
@@ -253,7 +258,7 @@ fn handle_submit_consent(
 }
 
 fn handle_get_audit_tail(audit: &AuditLogger, lines: u32) -> IpcResponse {
-    let events = audit.recent(usize::from(lines));
+    let events = audit.recent(lines as usize);
     let strings: Vec<String> = events
         .iter()
         .filter_map(|e| serde_json::to_string(e).ok())
@@ -316,7 +321,7 @@ fn disable_service() -> Result<(), anyhow::Error> {
 
 // --------------- security descriptor ---------------
 
-/// Holds a SECURITY_DESCRIPTOR and the ACL buffer it references.
+/// Holds a `SECURITY_DESCRIPTOR` and the ACL buffer it references.
 /// The ACL must live as long as the descriptor uses it.
 struct SecurityDescriptorHolder {
     _sd_buffer: Vec<u8>,
@@ -357,26 +362,25 @@ fn build_security_descriptor(session_id: u32) -> Result<SecurityDescriptorHolder
     // --- get user SID from session token ---
     let mut user_token = windows::Win32::Foundation::HANDLE::default();
     unsafe {
-        WTSQueryUserToken(session_id, &mut user_token)
+        WTSQueryUserToken(session_id, &raw mut user_token)
             .map_err(|e| anyhow::anyhow!("WTSQueryUserToken failed: {e}"))?;
     }
 
+    #[allow(clippy::cast_ptr_alignment)] // GetTokenInformation returns properly aligned TOKEN_USER
     let mut user_sid_buffer = unsafe {
         let mut needed: u32 = 0;
-        let _ = GetTokenInformation(user_token, TokenUser, None, 0, &mut needed);
+        let _ = GetTokenInformation(user_token, TokenUser, None, 0, &raw mut needed);
 
-        let mut buf = vec![0u8; usize::from(needed)];
+        let mut buf = vec![0u8; needed as usize];
         GetTokenInformation(
             user_token,
             TokenUser,
             Some(buf.as_mut_ptr().cast()),
             needed,
-            &mut needed,
+            &raw mut needed,
         )
         .map_err(|e| {
-            unsafe {
-                let _ = CloseHandle(user_token);
-            }
+            let _ = CloseHandle(user_token);
             anyhow::anyhow!("GetTokenInformation failed: {e}")
         })?;
 
@@ -384,9 +388,8 @@ fn build_security_descriptor(session_id: u32) -> Result<SecurityDescriptorHolder
 
         let token_user = &*(buf.as_ptr().cast::<TOKEN_USER>());
         let sid = token_user.User.Sid;
-        // GetLengthSid returns u32; keep as u32 to pass directly to CopySid
         let sid_len = GetLengthSid(sid);
-        let mut sid_copy = vec![0u8; usize::from(sid_len)];
+        let mut sid_copy = vec![0u8; sid_len as usize];
         CopySid(sid_len, PSID(sid_copy.as_mut_ptr().cast()), sid)
             .map_err(|e| anyhow::anyhow!("CopySid failed: {e}"))?;
         sid_copy
@@ -399,7 +402,7 @@ fn build_security_descriptor(session_id: u32) -> Result<SecurityDescriptorHolder
         };
         let mut sid = PSID::default();
         AllocateAndInitializeSid(
-            &nt_authority,
+            &raw const nt_authority,
             1,
             18, // SECURITY_LOCAL_SYSTEM_RID
             0,
@@ -409,17 +412,14 @@ fn build_security_descriptor(session_id: u32) -> Result<SecurityDescriptorHolder
             0,
             0,
             0,
-            &mut sid,
+            &raw mut sid,
         )
         .map_err(|e| anyhow::anyhow!("AllocateAndInitializeSid failed: {e}"))?;
 
-        // GetLengthSid returns u32; keep as u32 to pass directly to CopySid
         let sid_len = GetLengthSid(sid);
-        let mut sid_copy = vec![0u8; usize::from(sid_len)];
+        let mut sid_copy = vec![0u8; sid_len as usize];
         CopySid(sid_len, PSID(sid_copy.as_mut_ptr().cast()), sid).map_err(|e| {
-            unsafe {
-                FreeSid(sid);
-            }
+            FreeSid(sid);
             anyhow::anyhow!("CopySid for SYSTEM SID failed: {e}")
         })?;
         FreeSid(sid);
@@ -427,6 +427,9 @@ fn build_security_descriptor(session_id: u32) -> Result<SecurityDescriptorHolder
     };
 
     // --- build ACL with two ACEs ---
+    // ptstrName is typed as PWSTR but the trustee API uses it as a tagged
+    // pointer for SID data — the alignment mismatch is intentional.
+    #[allow(clippy::cast_ptr_alignment)]
     let entries = [
         EXPLICIT_ACCESS_W {
             grfAccessPermissions: 0xC000_0000, // GENERIC_READ | GENERIC_WRITE
@@ -435,8 +438,6 @@ fn build_security_descriptor(session_id: u32) -> Result<SecurityDescriptorHolder
             Trustee: TRUSTEE_W {
                 TrusteeForm: TRUSTEE_IS_SID,
                 TrusteeType: TRUSTEE_IS_USER,
-                // ptstrName is typed as PWSTR but the trustee API uses it as
-                // a tagged pointer for SID data — alignment is intentional.
                 ptstrName: windows::core::PWSTR(user_sid_buffer.as_mut_ptr().cast::<u16>()),
                 pMultipleTrustee: std::ptr::null_mut(),
                 MultipleTrusteeOperation: NO_MULTIPLE_TRUSTEE,
@@ -449,8 +450,6 @@ fn build_security_descriptor(session_id: u32) -> Result<SecurityDescriptorHolder
             Trustee: TRUSTEE_W {
                 TrusteeForm: TRUSTEE_IS_SID,
                 TrusteeType: TRUSTEE_IS_WELL_KNOWN_GROUP,
-                // ptstrName is typed as PWSTR but the trustee API uses it as
-                // a tagged pointer for SID data — alignment is intentional.
                 ptstrName: windows::core::PWSTR(system_sid_buffer.as_mut_ptr().cast::<u16>()),
                 pMultipleTrustee: std::ptr::null_mut(),
                 MultipleTrusteeOperation: NO_MULTIPLE_TRUSTEE,
@@ -460,7 +459,7 @@ fn build_security_descriptor(session_id: u32) -> Result<SecurityDescriptorHolder
 
     let mut acl_ptr = std::ptr::null_mut();
     unsafe {
-        let result = SetEntriesInAclW(Some(&entries), None, &mut acl_ptr);
+        let result = SetEntriesInAclW(Some(&entries), None, &raw mut acl_ptr);
         if result.is_err() {
             return Err(anyhow::anyhow!("SetEntriesInAclW failed: {result:?}"));
         }
@@ -515,7 +514,7 @@ fn read_message(pipe: windows::Win32::Foundation::HANDLE) -> Result<IpcRequest, 
     let mut len_buf = [0u8; 4];
     let mut bytes_read: u32 = 0;
     unsafe {
-        ReadFile(pipe, Some(&mut len_buf), Some(&mut bytes_read), None)
+        ReadFile(pipe, Some(&mut len_buf), Some(&raw mut bytes_read), None)
             .map_err(|e| anyhow::anyhow!("failed to read length prefix: {e}"))?;
     }
     if bytes_read != 4 {
@@ -524,7 +523,7 @@ fn read_message(pipe: windows::Win32::Foundation::HANDLE) -> Result<IpcRequest, 
         ));
     }
 
-    let msg_len = usize::from(u32::from_le_bytes(len_buf));
+    let msg_len = u32::from_le_bytes(len_buf) as usize;
     if msg_len > 65536 {
         return Err(anyhow::anyhow!("message too large: {msg_len} bytes"));
     }
@@ -537,12 +536,12 @@ fn read_message(pipe: windows::Win32::Foundation::HANDLE) -> Result<IpcRequest, 
             ReadFile(
                 pipe,
                 Some(&mut body[total_read..]),
-                Some(&mut chunk_read),
+                Some(&raw mut chunk_read),
                 None,
             )
             .map_err(|e| anyhow::anyhow!("failed to read message body: {e}"))?;
         }
-        total_read += usize::from(chunk_read);
+        total_read += chunk_read as usize;
     }
 
     let request: IpcRequest = serde_json::from_slice(&body)?;
@@ -563,9 +562,9 @@ fn write_message(
 
     let mut written: u32 = 0;
     unsafe {
-        WriteFile(pipe, Some(&len), Some(&mut written), None)
+        WriteFile(pipe, Some(&len), Some(&raw mut written), None)
             .map_err(|e| anyhow::anyhow!("failed to write length prefix: {e}"))?;
-        WriteFile(pipe, Some(&body), Some(&mut written), None)
+        WriteFile(pipe, Some(&body), Some(&raw mut written), None)
             .map_err(|e| anyhow::anyhow!("failed to write message body: {e}"))?;
     }
 
