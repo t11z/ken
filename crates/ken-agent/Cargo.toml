@@ -34,6 +34,16 @@ ctrlc = "3"
 
 [target.'cfg(windows)'.dependencies]
 windows-service = { workspace = true }
+windows = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Pipes",
+    "Win32_System_RemoteDesktop",
+    "Win32_System_Services",
+    "Win32_System_Threading",
+] }
 # GUI for the tray app (ADR-0009) — optional, gated behind tray-app feature
 eframe = { version = "0.31", default-features = false, features = ["glow", "default_fonts"], optional = true }
 tray-icon = { version = "0.19", optional = true }
