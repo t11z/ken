@@ -1,0 +1,91 @@
+# .llm-context-collector.toml
+#
+# Topics for Ken architecture sparring sessions.
+# Each topic stays narrow enough to keep the resulting context file
+# under ~200 KB. Add new topics as new conversation areas open up;
+# do not expand existing ones to cover unrelated questions.
+
+[topics.agent-mtls]
+description = """
+Server-side mTLS stack for the agent listener: TLS configuration, custom
+client certificate verifier, the endpoint-id middleware file, agent-API
+routing and handlers, plus the persistence and CA layers the verifier
+calls into. The wire-format definitions in ken-protocol that the agent
+handlers consume. The agent-side networking and enrollment code that
+constructs the corresponding requests. Use this topic when reasoning
+about ADR-0004, ADR-0008, or ADR-0016, or when implementing the
+verifier-to-handler identity bridge.
+"""
+paths = [
+  # --- Server: HTTP layer (TLS, verifier, middleware, routing, handlers)
+  "crates/ken-server/src/http/mod.rs",
+  "crates/ken-server/src/http/tls.rs",
+  "crates/ken-server/src/http/endpoint_id.rs",
+  "crates/ken-server/src/http/agent_api.rs",
+  "crates/ken-server/src/http/auth.rs",
+  "crates/ken-server/src/http/enrollment.rs",
+
+  # --- Server: process entry, shared state, errors, config, CA, storage
+  "crates/ken-server/src/main.rs",
+  "crates/ken-server/src/state.rs",
+  "crates/ken-server/src/error.rs",
+  "crates/ken-server/src/config.rs",
+  "crates/ken-server/src/ca.rs",
+  "crates/ken-server/src/storage/mod.rs",
+
+  # --- Server: schema and integration tests
+  "crates/ken-server/migrations/0001_initial.sql",
+  "crates/ken-server/tests/http_api.rs",
+  "crates/ken-server/tests/storage.rs",
+
+  # --- Server manifest (axum-server version pin, feature flags)
+  "crates/ken-server/Cargo.toml",
+
+  # --- Wire format: every message that crosses the agent boundary
+  "crates/ken-protocol/src/lib.rs",
+  "crates/ken-protocol/src/ids.rs",
+  "crates/ken-protocol/src/heartbeat.rs",
+  "crates/ken-protocol/src/command.rs",
+  "crates/ken-protocol/src/status.rs",
+  "crates/ken-protocol/src/audit.rs",
+  "crates/ken-protocol/src/enrollment.rs",
+  "crates/ken-protocol/src/version.rs",
+  "crates/ken-protocol/tests/roundtrip.rs",
+  "crates/ken-protocol/tests/compatibility.rs",
+  "crates/ken-protocol/Cargo.toml",
+
+  # --- Agent: networking, enrollment, configuration, entry point
+  "crates/ken-agent/src/main.rs",
+  "crates/ken-agent/src/cli.rs",
+  "crates/ken-agent/src/config.rs",
+  "crates/ken-agent/src/enroll.rs",
+  "crates/ken-agent/src/net/mod.rs",
+  "crates/ken-agent/src/net/client.rs",
+
+  # --- Agent: worker that emits heartbeats and processes commands
+  "crates/ken-agent/src/worker/mod.rs",
+  "crates/ken-agent/src/worker/main_loop.rs",
+  "crates/ken-agent/src/worker/commands.rs",
+
+  # --- Agent manifest
+  "crates/ken-agent/Cargo.toml",
+
+  # --- Workspace root (shared dependency versions, lints)
+  "Cargo.toml",
+
+  # --- Crate-level CLAUDE.md files (conventions in force for these crates)
+  "crates/ken-server/CLAUDE.md",
+  "crates/ken-protocol/CLAUDE.md",
+  "crates/ken-agent/CLAUDE.md",
+]
+
+[exclusions]
+# Strip committed certificate material and any binary fixtures.
+# The structure of the cert handling matters; the bytes do not.
+additional = [
+  "**/*.pem",
+  "**/*.der",
+  "**/*.p12",
+  "**/*.pfx",
+  "**/fixtures/**/*.bin",
+]
