@@ -109,18 +109,18 @@
 # These labels mark issues that touch the items in ADR-0001.
 # They exist so maintainers can quickly spot scope-boundary discussions.
 - name: trust/tier-1
-  color: 000000
+  color: "000000"
   description: Touches a Tier 1 invariant in ADR-0001; expect rejection unless mislabeled
 
 - name: trust/tier-2
-  color: 333333
+  color: "333333"
   description: Touches a Tier 2 scope boundary in ADR-0001; requires an ADR to change
 
 # ─── Community ─────────────────────────────────────────────────────
 - name: good first issue
-  color: 7057ff
+  color: "7057ff"
   description: Suitable for a first-time contributor
 
 - name: help-wanted
-  color: 008672
+  color: "008672"
   description: Maintainers would welcome community help on this one
