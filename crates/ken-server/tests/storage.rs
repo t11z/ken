@@ -5,7 +5,10 @@
 
 use ken_protocol::command::CommandPayload;
 use ken_protocol::ids::{CommandId, EndpointId, HeartbeatId};
-use ken_protocol::status::OsStatusSnapshot;
+use ken_protocol::status::{
+    BitLockerStatus, DefenderStatus, FirewallStatus, Observation, OsStatusSnapshot,
+    WindowsUpdateStatus,
+};
 use ken_protocol::SCHEMA_VERSION;
 use time::OffsetDateTime;
 
@@ -217,11 +220,31 @@ async fn heartbeat_and_status_snapshot() {
     // Insert status snapshot
     let snapshot = OsStatusSnapshot {
         collected_at: OffsetDateTime::now_utc(),
-        defender: None,
-        firewall: None,
-        bitlocker: None,
-        windows_update: None,
-        recent_security_events: vec![],
+        defender: DefenderStatus {
+            antivirus_enabled: Observation::Unobserved,
+            real_time_protection_enabled: Observation::Unobserved,
+            tamper_protection_enabled: Observation::Unobserved,
+            signature_version: Observation::Unobserved,
+            signature_last_updated: Observation::Unobserved,
+            signature_age_days: Observation::Unobserved,
+            last_full_scan: Observation::Unobserved,
+            last_quick_scan: Observation::Unobserved,
+        },
+        firewall: FirewallStatus {
+            domain_profile: Observation::Unobserved,
+            private_profile: Observation::Unobserved,
+            public_profile: Observation::Unobserved,
+        },
+        bitlocker: BitLockerStatus {
+            volumes: Observation::Unobserved,
+        },
+        windows_update: WindowsUpdateStatus {
+            last_search_time: Observation::Unobserved,
+            last_install_time: Observation::Unobserved,
+            pending_update_count: Observation::Unobserved,
+            pending_critical_update_count: Observation::Unobserved,
+        },
+        recent_security_events: Observation::Unobserved,
     };
     let snapshot_json = serde_json::to_string(&snapshot).unwrap();
 
@@ -245,7 +268,7 @@ async fn heartbeat_and_status_snapshot() {
             .unwrap();
 
     let loaded: OsStatusSnapshot = serde_json::from_str(&row.0).unwrap();
-    assert_eq!(loaded.defender, None);
+    assert_eq!(loaded.defender.antivirus_enabled, Observation::Unobserved);
 }
 
 #[tokio::test]

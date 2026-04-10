@@ -3,18 +3,22 @@
 //! On Windows, queries the `ROOT\StandardCimv2` WMI namespace for all
 //! three firewall profiles (Domain, Private, Public).
 
-use ken_protocol::status::FirewallStatus;
+use ken_protocol::status::{FirewallStatus, Observation};
 
 /// Collect firewall status.
-pub fn collect() -> Option<FirewallStatus> {
+///
+/// Returns a `FirewallStatus` with all profiles `Unobserved` until the
+/// WMI query is implemented.
+pub fn collect() -> FirewallStatus {
     #[cfg(windows)]
     {
         tracing::debug!("firewall observer: WMI query not yet implemented");
-        None
     }
-    #[cfg(not(windows))]
-    {
-        None
+
+    FirewallStatus {
+        domain_profile: Observation::Unobserved,
+        private_profile: Observation::Unobserved,
+        public_profile: Observation::Unobserved,
     }
 }
 
@@ -23,7 +27,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn collect_returns_none() {
-        assert!(collect().is_none());
+    fn collect_returns_all_unobserved() {
+        let status = collect();
+        assert_eq!(status.domain_profile, Observation::Unobserved);
     }
 }

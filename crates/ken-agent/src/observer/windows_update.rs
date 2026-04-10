@@ -1,28 +1,25 @@
 //! Windows Update observer.
 //!
-//! Phase 1 reads `LastSuccessTime` values from the registry. Pending
-//! update counts are set to 0 — full WUA COM API integration is tracked
-//! in issue #4.
+//! Phase 1 stub: returns all fields as `Unobserved`. Full WUA COM API
+//! integration is tracked in issue #4 and specified by ADR-0020.
 
-use ken_protocol::status::WindowsUpdateStatus;
+use ken_protocol::status::{Observation, WindowsUpdateStatus};
 
 /// Collect Windows Update status.
 ///
-/// Phase 1: reads last search/install times from the registry.
-/// Pending update counts are hardcoded to 0 (see issue #4).
-pub fn collect() -> Option<WindowsUpdateStatus> {
+/// Returns a `WindowsUpdateStatus` with all fields `Unobserved` until
+/// the WUA COM background task is implemented (ADR-0020).
+pub fn collect() -> WindowsUpdateStatus {
     #[cfg(windows)]
     {
-        // Phase 1: read LastSuccessTime from registry at
-        // HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\Results\
-        //
-        // Pending update counts require the WUA COM API (issue #4).
-        tracing::debug!("windows update observer: registry query not yet implemented");
-        None
+        tracing::debug!("windows update observer: not yet implemented (see issue #4)");
     }
-    #[cfg(not(windows))]
-    {
-        None
+
+    WindowsUpdateStatus {
+        last_search_time: Observation::Unobserved,
+        last_install_time: Observation::Unobserved,
+        pending_update_count: Observation::Unobserved,
+        pending_critical_update_count: Observation::Unobserved,
     }
 }
 
@@ -31,7 +28,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn collect_returns_none() {
-        assert!(collect().is_none());
+    fn collect_returns_all_unobserved() {
+        let status = collect();
+        assert_eq!(status.pending_update_count, Observation::Unobserved);
+        assert_eq!(status.pending_critical_update_count, Observation::Unobserved);
     }
 }

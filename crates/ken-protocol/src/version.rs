@@ -4,7 +4,10 @@
 /// Both sides check compatibility before processing messages. Bump this
 /// constant only when a wire-incompatible change is made, accompanied
 /// by a dedicated ADR documenting the migration path.
-pub const SCHEMA_VERSION: u32 = 1;
+///
+/// Version 2: ADR-0019 — all observer-contributed fields wrapped in
+/// `Observation<T>`, subsystem-level `Option` wrappers removed.
+pub const SCHEMA_VERSION: u32 = 2;
 
 /// Check whether a remote peer's schema version is compatible with ours.
 ///
@@ -21,8 +24,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn schema_version_is_one() {
-        assert_eq!(SCHEMA_VERSION, 1);
+    fn schema_version_is_two() {
+        assert_eq!(SCHEMA_VERSION, 2);
     }
 
     #[test]
@@ -33,6 +36,7 @@ mod tests {
     #[test]
     fn incompatible_with_different_version() {
         assert!(!is_compatible(0));
-        assert!(!is_compatible(2));
+        assert!(!is_compatible(1));
+        assert!(!is_compatible(3));
     }
 }

@@ -19,4 +19,5 @@ pub mod version;
 
 // Re-export the most commonly used types at the crate root for convenience.
 pub use ids::{CommandId, EndpointId, HeartbeatId, SessionId};
+pub use status::Observation;
 pub use version::SCHEMA_VERSION;
