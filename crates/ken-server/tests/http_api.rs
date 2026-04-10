@@ -182,8 +182,18 @@ fn admin_router_with_pool(pool: SqlitePool) -> axum::Router {
         .with_state(TestState { pool })
 }
 
+// NOTE: This test file uses hand-rolled handlers that do NOT exercise
+// the real router, the real KenAcceptor, or the real mTLS bridge. The
+// real end-to-end path is tested in agent_mtls_bridge.rs. A separate
+// cleanup issue should rewrite these tests to use the real router; see
+// ADR-0017's "Harder" block.
+
 /// Build the agent router with a test pool (for heartbeat tests).
-fn agent_router_with_pool(pool: SqlitePool) -> axum::Router {
+///
+/// The handler uses a hardcoded endpoint ID to look up the endpoint,
+/// since after ADR-0016 the heartbeat body no longer carries the
+/// sender's identity (that comes from the mTLS certificate).
+fn agent_router_with_pool(pool: SqlitePool, endpoint_id: EndpointId) -> axum::Router {
     use axum::extract::State;
     use axum::routing::{get, post};
     use axum::{Json, Router};
@@ -192,6 +202,7 @@ fn agent_router_with_pool(pool: SqlitePool) -> axum::Router {
     #[derive(Clone)]
     struct TestState {
         pool: SqlitePool,
+        endpoint_id: EndpointId,
     }
 
     async fn heartbeat_handler(
@@ -202,9 +213,13 @@ fn agent_router_with_pool(pool: SqlitePool) -> axum::Router {
             return Err((StatusCode::BAD_REQUEST, "bad schema".to_string()));
         }
 
+        // Use the endpoint_id from the test state (simulating what the
+        // real handler gets from Extension<EndpointId>).
+        let endpoint_id = &state.endpoint_id;
+
         // Check endpoint exists
         let exists: Option<(String,)> = sqlx::query_as("SELECT id FROM endpoints WHERE id = ?")
-            .bind(heartbeat.endpoint_id.to_string())
+            .bind(endpoint_id.to_string())
             .fetch_optional(&state.pool)
             .await
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
@@ -221,7 +236,7 @@ fn agent_router_with_pool(pool: SqlitePool) -> axum::Router {
              VALUES (?, ?, ?, ?, ?, ?)"
         )
         .bind(heartbeat.heartbeat_id.to_string())
-        .bind(heartbeat.endpoint_id.to_string())
+        .bind(endpoint_id.to_string())
         .bind(now.format(&time::format_description::well_known::Rfc3339).unwrap())
         .bind(heartbeat.sent_at.format(&time::format_description::well_known::Rfc3339).unwrap())
         .bind(heartbeat.schema_version)
@@ -247,7 +262,7 @@ fn agent_router_with_pool(pool: SqlitePool) -> axum::Router {
     Router::new()
         .route("/api/v1/heartbeat", post(heartbeat_handler))
         .route("/api/v1/time", get(time_handler))
-        .with_state(TestState { pool })
+        .with_state(TestState { pool, endpoint_id })
 }
 
 fn make_enrollment_request(token: &str) -> EnrollmentRequest {
@@ -261,10 +276,9 @@ fn make_enrollment_request(token: &str) -> EnrollmentRequest {
     }
 }
 
-fn make_heartbeat(endpoint_id: EndpointId) -> Heartbeat {
+fn make_heartbeat() -> Heartbeat {
     Heartbeat {
         heartbeat_id: HeartbeatId::new(),
-        endpoint_id,
         schema_version: SCHEMA_VERSION,
         agent_version: "0.1.0".to_string(),
         sent_at: OffsetDateTime::now_utc(),
@@ -402,8 +416,8 @@ async fn heartbeat_happy_path() {
     let endpoint_id = EndpointId::new();
     create_endpoint(&pool, &endpoint_id).await;
 
-    let app = agent_router_with_pool(pool.clone());
-    let body = serde_json::to_string(&make_heartbeat(endpoint_id)).unwrap();
+    let app = agent_router_with_pool(pool.clone(), endpoint_id);
+    let body = serde_json::to_string(&make_heartbeat()).unwrap();
 
     let response = app
         .oneshot(
@@ -437,10 +451,10 @@ async fn heartbeat_happy_path() {
 #[tokio::test]
 async fn heartbeat_unknown_endpoint_returns_403() {
     let pool = test_pool().await;
-    let app = agent_router_with_pool(pool);
-
     let unknown_id = EndpointId::new();
-    let body = serde_json::to_string(&make_heartbeat(unknown_id)).unwrap();
+    let app = agent_router_with_pool(pool, unknown_id);
+
+    let body = serde_json::to_string(&make_heartbeat()).unwrap();
 
     let response = app
         .oneshot(
@@ -462,7 +476,7 @@ async fn heartbeat_unknown_endpoint_returns_403() {
 #[tokio::test]
 async fn time_endpoint_returns_timestamp() {
     let pool = test_pool().await;
-    let app = agent_router_with_pool(pool);
+    let app = agent_router_with_pool(pool, EndpointId::new());
 
     let response = app
         .oneshot(

@@ -7,8 +7,6 @@
 //! 1. An enrolled endpoint can send a heartbeat and the server records
 //!    it against the certificate-derived `EndpointId`.
 //! 2. A non-enrolled endpoint is rejected at the TLS handshake layer.
-//! 3. The body `endpoint_id` field is ignored — the certificate identity
-//!    wins.
 //!
 //! See ADR-0008 and ADR-0017 for the architectural justification of this
 //! bridge, and ADR-0016 for the single-source identity rule.
@@ -39,11 +37,11 @@ fn test_config() -> Config {
     toml::from_str("").unwrap()
 }
 
-/// Build a heartbeat body for an endpoint.
-fn make_heartbeat(endpoint_id: EndpointId) -> Heartbeat {
+/// Build a heartbeat body. After ADR-0016, the heartbeat does not carry
+/// the sender's identity — that comes from the mTLS certificate.
+fn make_heartbeat() -> Heartbeat {
     Heartbeat {
         heartbeat_id: HeartbeatId::new(),
-        endpoint_id,
         schema_version: SCHEMA_VERSION,
         agent_version: "0.1.0".to_string(),
         sent_at: OffsetDateTime::now_utc(),
@@ -214,7 +212,7 @@ async fn enrolled_endpoint_heartbeat_succeeds() {
     let h = TestHarness::start().await;
     let client = h.good_client();
 
-    let heartbeat = make_heartbeat(h.good_endpoint_id);
+    let heartbeat = make_heartbeat();
 
     let resp = client
         .post(h.heartbeat_url())
@@ -248,7 +246,7 @@ async fn unenrolled_endpoint_rejected_at_handshake() {
     let h = TestHarness::start().await;
     let client = h.rogue_client();
 
-    let heartbeat = make_heartbeat(EndpointId::new());
+    let heartbeat = make_heartbeat();
 
     let result = client.post(h.heartbeat_url()).json(&heartbeat).send().await;
 
@@ -256,45 +254,6 @@ async fn unenrolled_endpoint_rejected_at_handshake() {
     assert!(
         result.is_err(),
         "rogue client should fail at TLS handshake, got: {result:?}"
-    );
-}
-
-/// When the body claims a different `endpoint_id` than the certificate's
-/// CN, the server records the heartbeat against the certificate's
-/// `EndpointId` — proving ADR-0016's promise is operational.
-#[tokio::test(flavor = "multi_thread")]
-async fn body_endpoint_id_ignored_in_favor_of_certificate() {
-    let h = TestHarness::start().await;
-    let client = h.good_client();
-
-    // Build a heartbeat whose body claims a DIFFERENT endpoint_id.
-    let fake_id = EndpointId::new();
-    let heartbeat = make_heartbeat(fake_id);
-
-    let resp = client
-        .post(h.heartbeat_url())
-        .json(&heartbeat)
-        .send()
-        .await
-        .expect("request should succeed");
-
-    assert_eq!(
-        resp.status(),
-        200,
-        "body endpoint_id mismatch should not cause rejection"
-    );
-
-    // The heartbeat should be recorded against the CERTIFICATE's
-    // EndpointId, not the body's.
-    let real_endpoint = h
-        .storage
-        .get_endpoint(&h.good_endpoint_id)
-        .await
-        .unwrap()
-        .expect("real endpoint should exist");
-    assert!(
-        real_endpoint.last_heartbeat_at.is_some(),
-        "heartbeat should be recorded against the certificate identity"
     );
 }
 

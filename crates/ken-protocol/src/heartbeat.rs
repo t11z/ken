@@ -10,21 +10,20 @@ use time::OffsetDateTime;
 
 use crate::audit::AuditEvent;
 use crate::command::CommandEnvelope;
-use crate::ids::{EndpointId, HeartbeatId};
+use crate::ids::HeartbeatId;
 use crate::status::OsStatusSnapshot;
 
 /// The periodic heartbeat from agent to server.
 ///
-/// Contains the agent's current identity, version, OS status, and a
-/// bounded tail of recent audit events (up to 50) so heartbeats stay
-/// small even if the agent has been busy.
+/// Contains the agent's version, OS status, and a bounded tail of
+/// recent audit events (up to 50) so heartbeats stay small even if
+/// the agent has been busy. The sender's identity is not carried in the
+/// message — it derives exclusively from the mTLS client certificate
+/// per ADR-0016.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Heartbeat {
     /// Unique identifier for this heartbeat.
     pub heartbeat_id: HeartbeatId,
-
-    /// Which endpoint is sending this heartbeat.
-    pub endpoint_id: EndpointId,
 
     /// Protocol schema version.
     pub schema_version: u32,

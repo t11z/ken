@@ -9,6 +9,7 @@ use std::time::Duration;
 
 use ken_protocol::command::CommandOutcome;
 use ken_protocol::heartbeat::{Heartbeat, HeartbeatAck};
+use ken_protocol::ids::EndpointId;
 
 use crate::config::EnrolledCredentials;
 
@@ -59,15 +60,19 @@ impl KenApiClient {
     /// Send a heartbeat to the server and receive an ack with pending
     /// commands.
     ///
-    /// POSTs JSON to `{server_url}/api/v1/heartbeat`.
+    /// POSTs JSON to `{server_url}/api/v1/heartbeat`. The `endpoint_id`
+    /// parameter is used only for logging — the server identifies the
+    /// agent by its mTLS client certificate, not the request body
+    /// (ADR-0016).
     pub async fn send_heartbeat(
         &self,
         heartbeat: &Heartbeat,
+        endpoint_id: &EndpointId,
     ) -> Result<HeartbeatAck, anyhow::Error> {
         let url = format!("{}/api/v1/heartbeat", self.server_url);
         tracing::debug!(
             url = %url,
-            endpoint_id = %heartbeat.endpoint_id,
+            endpoint_id = %endpoint_id,
             "sending heartbeat"
         );
 
