@@ -36,9 +36,10 @@ pub fn enumerate_active_sessions() -> Vec<u32> {
     let mut session_info_ptr: *mut WTS_SESSION_INFOW = std::ptr::null_mut();
     let mut count: u32 = 0;
 
+    // WTSEnumerateSessionsW takes Option<HANDLE> for hserver.
     let result = unsafe {
         WTSEnumerateSessionsW(
-            WTS_CURRENT_SERVER_HANDLE,
+            Some(WTS_CURRENT_SERVER_HANDLE),
             0,
             1,
             &raw mut session_info_ptr,
@@ -112,8 +113,10 @@ pub fn launch_tray_in_session(session_id: u32) -> Result<TrayProcessInfo, String
     dup_result.map_err(|e| format!("DuplicateTokenEx failed for session {session_id}: {e}"))?;
 
     // --- Step 3: Create environment block for the user ---
+    // CreateEnvironmentBlock takes Option<HANDLE> for htoken.
     let mut env_block: *mut std::ffi::c_void = std::ptr::null_mut();
-    let env_result = unsafe { CreateEnvironmentBlock(&raw mut env_block, primary_token, false) };
+    let env_result =
+        unsafe { CreateEnvironmentBlock(&raw mut env_block, Some(primary_token), false) };
 
     if env_result.is_err() {
         unsafe {
@@ -138,7 +141,7 @@ pub fn launch_tray_in_session(session_id: u32) -> Result<TrayProcessInfo, String
     let desktop = "winsta0\\default";
     let mut desktop_wide: Vec<u16> = desktop.encode_utf16().chain(std::iter::once(0)).collect();
 
-    let mut startup_info = STARTUPINFOW {
+    let startup_info = STARTUPINFOW {
         cb: u32::try_from(std::mem::size_of::<STARTUPINFOW>()).expect("STARTUPINFOW size fits u32"),
         lpDesktop: PWSTR(desktop_wide.as_mut_ptr()),
         ..Default::default()
@@ -147,16 +150,19 @@ pub fn launch_tray_in_session(session_id: u32) -> Result<TrayProcessInfo, String
     let mut process_info = PROCESS_INFORMATION::default();
 
     // --- Step 6: CreateProcessAsUser ---
+    // CreateProcessAsUserW takes Option<HANDLE> for htoken,
+    // Option<PWSTR> for lpcommandline, and Option<*const c_void>
+    // for lpenvironment.
     let create_result = unsafe {
         CreateProcessAsUserW(
-            primary_token,
+            Some(primary_token),
             None, // application name — derived from command line
-            PWSTR(command_line_wide.as_mut_ptr()),
+            Some(PWSTR(command_line_wide.as_mut_ptr())),
             None, // process security attributes
             None, // thread security attributes
             false,
             CREATE_UNICODE_ENVIRONMENT | CREATE_NO_WINDOW,
-            Some(env_block),
+            Some(env_block.cast_const()),
             None, // current directory — inherit
             &raw const startup_info,
             &raw mut process_info,
@@ -165,7 +171,7 @@ pub fn launch_tray_in_session(session_id: u32) -> Result<TrayProcessInfo, String
 
     // Clean up environment block and token regardless of result.
     unsafe {
-        let _ = DestroyEnvironmentBlock(env_block);
+        let _ = DestroyEnvironmentBlock(env_block.cast_const());
         let _ = CloseHandle(primary_token);
     }
 
@@ -198,6 +204,7 @@ pub fn launch_tray_in_session(session_id: u32) -> Result<TrayProcessInfo, String
 // TerminateProcess. See Issue #10 prompt and ADR-0010.
 pub fn terminate_tray_process(info: &TrayProcessInfo) {
     // Check if the process has already exited (crash, user killed it).
+    // WaitForSingleObject returns WAIT_EVENT; compare with WAIT_OBJECT_0.
     let wait_result = unsafe { WaitForSingleObject(info.process_handle, 0) };
     if wait_result == WAIT_OBJECT_0 {
         tracing::debug!(
