@@ -232,19 +232,20 @@ async fn wua_background_loop(
 /// maps every error to `Observation::Unobserved`.
 #[cfg(windows)]
 fn wua_search() -> Result<WuaCounts, WuaError> {
+    use windows::core::BSTR;
     use windows::Win32::System::Com::{
         CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_INPROC_SERVER,
         COINIT_APARTMENTTHREADED,
     };
     use windows::Win32::System::UpdateAgent::{IUpdateSearcher, IUpdateSession, UpdateSession};
-    use windows::core::BSTR;
 
     // Initialize COM in the spawned thread with STA apartment model
-    // as required by WUA.
+    // as required by WUA. CoInitializeEx returns HRESULT directly;
+    // .ok() converts it to Result.
     unsafe {
-        CoInitializeEx(None, COINIT_APARTMENTTHREADED).map_err(|e| {
-            WuaError::ComInit(format!("{e}"))
-        })?;
+        CoInitializeEx(None, COINIT_APARTMENTTHREADED)
+            .ok()
+            .map_err(|e| WuaError::ComInit(format!("{e}")))?;
     }
 
     // Ensure COM is uninitialized when we're done.
@@ -260,37 +261,36 @@ fn wua_search() -> Result<WuaCounts, WuaError> {
 
     // Create IUpdateSession.
     let session: IUpdateSession = unsafe {
-        CoCreateInstance(&UpdateSession, None, CLSCTX_INPROC_SERVER).map_err(|e| {
-            WuaError::SessionCreate(format!("{e}"))
-        })?
+        CoCreateInstance(&UpdateSession, None, CLSCTX_INPROC_SERVER)
+            .map_err(|e| WuaError::SessionCreate(format!("{e}")))?
     };
 
     // Create IUpdateSearcher.
     let searcher: IUpdateSearcher = unsafe {
-        session.CreateUpdateSearcher().map_err(|e| {
-            WuaError::SearcherCreate(format!("{e}"))
-        })?
+        session
+            .CreateUpdateSearcher()
+            .map_err(|e| WuaError::SearcherCreate(format!("{e}")))?
     };
 
     // Search for updates that are not installed.
     let criteria = BSTR::from("IsInstalled=0");
     let search_result = unsafe {
-        searcher.Search(&criteria).map_err(|e| {
-            WuaError::Search(format!("{e}"))
-        })?
+        searcher
+            .Search(&criteria)
+            .map_err(|e| WuaError::Search(format!("{e}")))?
     };
 
     // Get the list of updates.
     let updates = unsafe {
-        search_result.Updates().map_err(|e| {
-            WuaError::ResultIteration(format!("{e}"))
-        })?
+        search_result
+            .Updates()
+            .map_err(|e| WuaError::ResultIteration(format!("{e}")))?
     };
 
     let count = unsafe {
-        updates.Count().map_err(|e| {
-            WuaError::ResultIteration(format!("{e}"))
-        })?
+        updates
+            .Count()
+            .map_err(|e| WuaError::ResultIteration(format!("{e}")))?
     };
 
     let total = u32::try_from(count).unwrap_or(u32::MAX);
@@ -299,15 +299,15 @@ fn wua_search() -> Result<WuaCounts, WuaError> {
     // Count updates where MsrcSeverity == "Critical" per ADR-0020.
     for i in 0..count {
         let update = unsafe {
-            updates.get_Item(i).map_err(|e| {
-                WuaError::ResultIteration(format!("get_Item({i}): {e}"))
-            })?
+            updates
+                .get_Item(i)
+                .map_err(|e| WuaError::ResultIteration(format!("get_Item({i}): {e}")))?
         };
 
         let severity = unsafe {
-            update.MsrcSeverity().map_err(|e| {
-                WuaError::ResultIteration(format!("MsrcSeverity({i}): {e}"))
-            })?
+            update
+                .MsrcSeverity()
+                .map_err(|e| WuaError::ResultIteration(format!("MsrcSeverity({i}): {e}")))?
         };
 
         if severity == "Critical" {
@@ -476,8 +476,10 @@ mod tests {
 
         // Both should be the same variant (Fresh here).
         let total_is_fresh = matches!(status.pending_update_count, Observation::Fresh { .. });
-        let critical_is_fresh =
-            matches!(status.pending_critical_update_count, Observation::Fresh { .. });
+        let critical_is_fresh = matches!(
+            status.pending_critical_update_count,
+            Observation::Fresh { .. }
+        );
         assert_eq!(total_is_fresh, critical_is_fresh);
     }
 

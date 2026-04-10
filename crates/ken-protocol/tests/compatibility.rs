@@ -56,14 +56,8 @@ fn unknown_fields_are_ignored_on_deserialization() {
 
     let snapshot: OsStatusSnapshot =
         serde_json::from_str(json).expect("should parse with unknown fields");
-    assert_eq!(
-        snapshot.defender.antivirus_enabled,
-        Observation::Unobserved
-    );
-    assert_eq!(
-        snapshot.recent_security_events,
-        Observation::Unobserved
-    );
+    assert_eq!(snapshot.defender.antivirus_enabled, Observation::Unobserved);
+    assert_eq!(snapshot.recent_security_events, Observation::Unobserved);
 }
 
 #[test]

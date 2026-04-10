@@ -9,8 +9,8 @@
 use std::time::Duration;
 
 use ken_protocol::status::{
-    BitLockerStatus, DefenderStatus, FirewallStatus, Observation, OsStatusSnapshot,
-    SecurityEvent, WindowsUpdateStatus,
+    BitLockerStatus, DefenderStatus, FirewallStatus, Observation, OsStatusSnapshot, SecurityEvent,
+    WindowsUpdateStatus,
 };
 use time::OffsetDateTime;
 
@@ -19,8 +19,7 @@ use std::sync::Arc;
 
 use super::trait_def::Observer;
 use super::{
-    BitLockerObserver, DefenderObserver, EventLogObserver, FirewallObserver,
-    WindowsUpdateObserver,
+    BitLockerObserver, DefenderObserver, EventLogObserver, FirewallObserver, WindowsUpdateObserver,
 };
 
 /// The set of all observers held by the worker across heartbeat ticks.
@@ -76,13 +75,11 @@ impl ObserverSet {
         let collected_at = OffsetDateTime::now_utc();
         let budget = self.budget;
 
-        let (obs, defender) =
-            run_observer(self.defender.take(), &self.last_defender, budget).await;
+        let (obs, defender) = run_observer(self.defender.take(), &self.last_defender, budget).await;
         self.defender = obs;
         self.last_defender = defender.clone();
 
-        let (obs, firewall) =
-            run_observer(self.firewall.take(), &self.last_firewall, budget).await;
+        let (obs, firewall) = run_observer(self.firewall.take(), &self.last_firewall, budget).await;
         self.firewall = obs;
         self.last_firewall = firewall.clone();
 
@@ -91,8 +88,12 @@ impl ObserverSet {
         self.bitlocker = obs;
         self.last_bitlocker = bitlocker.clone();
 
-        let (obs, windows_update) =
-            run_observer(self.windows_update.take(), &self.last_windows_update, budget).await;
+        let (obs, windows_update) = run_observer(
+            self.windows_update.take(),
+            &self.last_windows_update,
+            budget,
+        )
+        .await;
         self.windows_update = obs;
         self.last_windows_update = windows_update.clone();
 
@@ -237,10 +238,7 @@ mod tests {
         let snapshot = set.collect_snapshot().await;
         // On non-Windows, all observers return Unobserved
         assert_eq!(snapshot.recent_security_events, Observation::Unobserved);
-        assert_eq!(
-            snapshot.defender.antivirus_enabled,
-            Observation::Unobserved
-        );
+        assert_eq!(snapshot.defender.antivirus_enabled, Observation::Unobserved);
     }
 
     /// ADR-0018 load-bearing test: a panicking observer must not affect
@@ -286,14 +284,12 @@ mod tests {
 
         // The panicking observer should return the fallback and lose
         // its observer struct (None).
-        let (obs_back, result) =
-            run_observer(Some(PanickingObserver), &fallback, budget).await;
+        let (obs_back, result) = run_observer(Some(PanickingObserver), &fallback, budget).await;
         assert!(obs_back.is_none(), "panicked observer should be lost");
         assert_eq!(result.domain_profile, Observation::Unobserved);
 
         // The good observer should work normally despite the previous panic.
-        let (obs_back, result) =
-            run_observer(Some(GoodObserver), &fallback, budget).await;
+        let (obs_back, result) = run_observer(Some(GoodObserver), &fallback, budget).await;
         assert!(obs_back.is_some(), "good observer should be returned");
         assert!(result.domain_profile.value().is_some());
     }
@@ -327,8 +323,7 @@ mod tests {
         // Very short budget to trigger timeout.
         let budget = Duration::from_millis(10);
 
-        let (obs_back, result) =
-            run_observer(Some(SlowObserver), &fallback, budget).await;
+        let (obs_back, result) = run_observer(Some(SlowObserver), &fallback, budget).await;
         // Observer is lost because it's still running.
         assert!(obs_back.is_none());
         // Should get the fallback because the observer exceeded the budget.

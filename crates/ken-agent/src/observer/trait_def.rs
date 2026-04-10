@@ -29,4 +29,3 @@ pub trait Observer: Send + 'static {
     /// to the observer.
     fn observe(&mut self) -> Self::Output;
 }
-
