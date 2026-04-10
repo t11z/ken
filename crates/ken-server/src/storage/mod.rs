@@ -33,10 +33,6 @@ pub struct Endpoint {
     pub agent_version: String,
     pub enrolled_at: String,
     pub last_heartbeat_at: Option<String>,
-    #[expect(
-        dead_code,
-        reason = "will be used when certificate management UI is added"
-    )]
     pub certificate_pem: String,
     /// When the endpoint's client certificate expires (checked by mTLS verifier).
     pub certificate_expires_at: String,
@@ -69,10 +65,6 @@ pub struct EnrollmentToken {
 /// An audit event as stored in the database (with source and endpoint info).
 #[derive(Debug, Clone)]
 pub struct StoredAuditEvent {
-    #[expect(
-        dead_code,
-        reason = "id is selected from DB for completeness; will be used in detail views"
-    )]
     pub id: String,
     pub endpoint_id: Option<String>,
     pub occurred_at: String,
@@ -119,11 +111,10 @@ impl Storage {
     }
 
     /// Connect to an in-memory database for testing.
-    #[cfg(test)]
-    #[expect(
-        dead_code,
-        reason = "available for unit tests that need an in-memory database"
-    )]
+    ///
+    /// Not gated by `#[cfg(test)]` because the integration test
+    /// `agent_mtls_bridge.rs` (Phase 1 of ADR-0017) needs it, and
+    /// integration tests compile the library without the test flag.
     pub async fn connect_in_memory() -> Result<Self, AppError> {
         use std::str::FromStr;
         let options = SqliteConnectOptions::from_str("sqlite::memory:")?.foreign_keys(true);
@@ -345,10 +336,8 @@ impl Storage {
     }
 
     /// Check if an endpoint exists and is not revoked.
-    #[expect(
-        dead_code,
-        reason = "will be used when mTLS client-cert verification is wired up"
-    )]
+    // TODO: remove with cleanup issue — the verifier reads the full
+    // Endpoint record via get_endpoint rather than using this helper.
     pub async fn is_endpoint_active(&self, id: &str) -> Result<bool, AppError> {
         let row = sqlx::query_as::<_, (i32,)>(
             "SELECT COUNT(*) FROM endpoints WHERE id = ? AND revoked_at IS NULL",
@@ -669,10 +658,6 @@ fn parse_time(s: &str) -> Result<OffsetDateTime, AppError> {
 
 /// Resolve the database path from a data directory, used by tests.
 #[must_use]
-#[expect(
-    dead_code,
-    reason = "utility function available for integration tests and future callers"
-)]
 pub fn db_path(data_dir: &Path) -> std::path::PathBuf {
     data_dir.join("ken.db")
 }

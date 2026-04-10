@@ -70,7 +70,6 @@ pub async fn run(shutdown: Arc<AtomicBool>, paths: &DataPaths) -> Result<(), any
 
         let heartbeat = Heartbeat {
             heartbeat_id: HeartbeatId::new(),
-            endpoint_id: credentials.endpoint_id,
             schema_version: ken_protocol::SCHEMA_VERSION,
             agent_version: env!("CARGO_PKG_VERSION").to_string(),
             sent_at: time::OffsetDateTime::now_utc(),
@@ -78,7 +77,10 @@ pub async fn run(shutdown: Arc<AtomicBool>, paths: &DataPaths) -> Result<(), any
             audit_tail: audit.recent(50),
         };
 
-        match client.send_heartbeat(&heartbeat).await {
+        match client
+            .send_heartbeat(&heartbeat, &credentials.endpoint_id)
+            .await
+        {
             Ok(ack) => {
                 audit.log(AuditEventKind::HeartbeatSent, "heartbeat acknowledged");
                 heartbeat_interval =

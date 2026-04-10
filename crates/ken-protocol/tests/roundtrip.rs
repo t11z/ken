@@ -258,7 +258,6 @@ fn command_outcome_roundtrip() {
 fn heartbeat_roundtrip() {
     let hb = Heartbeat {
         heartbeat_id: HeartbeatId::new(),
-        endpoint_id: EndpointId::new(),
         schema_version: SCHEMA_VERSION,
         agent_version: "0.1.0".to_string(),
         sent_at: now(),

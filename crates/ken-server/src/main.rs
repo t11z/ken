@@ -8,33 +8,27 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-mod ca;
-mod config;
-mod error;
-mod http;
-mod state;
-mod storage;
-
-use ca::Ca;
-use config::Config;
-use state::AppState;
-use storage::Storage;
+use ken_server::ca::Ca;
+use ken_server::config::Config;
+use ken_server::http;
+use ken_server::state::AppState;
+use ken_server::storage::Storage;
 
 /// Initialize the tracing subscriber based on config.
-fn init_tracing(logging: &config::LoggingConfig) {
+fn init_tracing(logging: &ken_server::config::LoggingConfig) {
     use tracing_subscriber::EnvFilter;
 
     let filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(&logging.level));
 
     match logging.format {
-        config::LogFormat::Json => {
+        ken_server::config::LogFormat::Json => {
             tracing_subscriber::fmt()
                 .with_env_filter(filter)
                 .json()
                 .init();
         }
-        config::LogFormat::Text => {
+        ken_server::config::LogFormat::Text => {
             tracing_subscriber::fmt().with_env_filter(filter).init();
         }
     }
@@ -87,7 +81,11 @@ async fn main() -> anyhow::Result<()> {
     let admin_rustls =
         axum_server::tls_rustls::RustlsConfig::from_config(Arc::new(admin_tls_config));
 
-    // Agent listener: mTLS with custom client cert verifier
+    // Agent listener: mTLS with custom client cert verifier and KenAcceptor
+    // bridge (ADR-0008, ADR-0017). The KenAcceptor wraps RustlsAcceptor,
+    // extracts the verified EndpointId from the peer certificate after the
+    // handshake, and attaches it to the per-connection service so handlers
+    // can read it via Extension<EndpointId>.
     let agent_tls_config = http::tls::build_server_tls_config(
         &server_cert_pem,
         &server_key_pem,
@@ -95,6 +93,7 @@ async fn main() -> anyhow::Result<()> {
     )?;
     let agent_rustls =
         axum_server::tls_rustls::RustlsConfig::from_config(Arc::new(agent_tls_config));
+    let agent_acceptor = http::tls::KenAcceptor::new(agent_rustls);
 
     tracing::info!(
         admin = %admin_addr,
@@ -111,7 +110,7 @@ async fn main() -> anyhow::Result<()> {
                 tracing::error!(error = %e, "admin listener failed");
             }
         }
-        result = axum_server::bind_rustls(agent_addr, agent_rustls).serve(agent_app.into_make_service()) => {
+        result = axum_server::bind(agent_addr).acceptor(agent_acceptor).serve(agent_app.into_make_service()) => {
             if let Err(e) = result {
                 tracing::error!(error = %e, "agent listener failed");
             }

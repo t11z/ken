@@ -13,6 +13,7 @@ pub mod endpoint_id;
 pub mod enrollment;
 pub mod tls;
 
+use axum::middleware;
 use axum::Router;
 use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
@@ -20,9 +21,15 @@ use tower_http::trace::TraceLayer;
 use crate::state::AppState;
 
 /// Build the router for the agent-facing mTLS API.
+///
+/// The `require_endpoint_id` middleware is mounted as defense-in-depth:
+/// under correct wiring (agent listener served via `KenAcceptor`), the
+/// `EndpointId` extension is always present. If it is absent, the
+/// middleware returns 500 — see ADR-0017.
 pub fn agent_router(state: AppState) -> Router {
     Router::new()
         .merge(agent_api::routes())
+        .layer(middleware::from_fn(endpoint_id::require_endpoint_id))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }
