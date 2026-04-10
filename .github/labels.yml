@@ -117,7 +117,7 @@
   description: Touches a Tier 2 scope boundary in ADR-0001; requires an ADR to change
 
 # ─── Community ─────────────────────────────────────────────────────
-- name: good-first-issue
+- name: good first issue
   color: 7057ff
   description: Suitable for a first-time contributor
 
