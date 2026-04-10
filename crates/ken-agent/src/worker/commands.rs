@@ -1,5 +1,6 @@
 //! Command processing for instructions received from the server.
 
+#[cfg(not(windows))]
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
