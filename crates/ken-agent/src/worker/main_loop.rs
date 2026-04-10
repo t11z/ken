@@ -2,6 +2,8 @@
 //!
 //! Orchestrates heartbeat collection, server communication, and
 //! command processing. Runs inside the service's tokio runtime.
+//! Per ADR-0018, observers are invoked via `spawn_blocking` with
+//! per-observer time budgets.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -14,7 +16,7 @@ use ken_protocol::ids::HeartbeatId;
 use crate::audit::AuditLogger;
 use crate::config::{AgentConfig, DataPaths, EnrolledCredentials};
 use crate::net::client::KenApiClient;
-use crate::observer::snapshot::collect_snapshot;
+use crate::observer::snapshot::ObserverSet;
 use crate::worker::commands;
 
 /// Run the main worker loop until shutdown is signalled.
@@ -58,6 +60,13 @@ pub async fn run(shutdown: Arc<AtomicBool>, paths: &DataPaths) -> Result<(), any
         });
     }
 
+    // Create the observer set per ADR-0018. Each observer is a struct
+    // that owns its state. The set is held across heartbeat ticks.
+    // The shutdown signal is passed to the Windows Update observer's
+    // background task (ADR-0020).
+    let budget = Duration::from_millis(config.observer.per_observer_budget_ms);
+    let mut observers = ObserverSet::new(budget, shutdown.clone());
+
     let mut heartbeat_interval = Duration::from_secs(u64::from(config.heartbeat.interval_seconds));
 
     while !shutdown.load(Ordering::SeqCst) {
@@ -66,7 +75,7 @@ pub async fn run(shutdown: Arc<AtomicBool>, paths: &DataPaths) -> Result<(), any
             break;
         }
 
-        let status = collect_snapshot();
+        let status = observers.collect_snapshot().await;
 
         let heartbeat = Heartbeat {
             heartbeat_id: HeartbeatId::new(),

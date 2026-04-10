@@ -3,18 +3,37 @@
 //! On Windows, queries the `ROOT\CIMV2\Security\MicrosoftVolumeEncryption`
 //! namespace. Requires SYSTEM privileges (the agent has them).
 
-use ken_protocol::status::BitLockerStatus;
+use ken_protocol::status::{BitLockerStatus, Observation};
 
-/// Collect `BitLocker` status.
-pub fn collect() -> Option<BitLockerStatus> {
-    #[cfg(windows)]
-    {
-        tracing::debug!("bitlocker observer: WMI query not yet implemented");
-        None
+use super::trait_def::Observer;
+
+/// `BitLocker` observer struct per ADR-0018.
+pub struct BitLockerObserver;
+
+impl BitLockerObserver {
+    /// Create a new `BitLocker` observer.
+    #[must_use]
+    pub fn new() -> Self {
+        Self
     }
-    #[cfg(not(windows))]
-    {
-        None
+}
+
+impl Observer for BitLockerObserver {
+    type Output = BitLockerStatus;
+
+    fn name(&self) -> &'static str {
+        "bitlocker"
+    }
+
+    fn observe(&mut self) -> BitLockerStatus {
+        #[cfg(windows)]
+        {
+            tracing::debug!("bitlocker observer: WMI query not yet implemented");
+        }
+
+        BitLockerStatus {
+            volumes: Observation::Unobserved,
+        }
     }
 }
 
@@ -23,7 +42,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn collect_returns_none() {
-        assert!(collect().is_none());
+    fn observe_returns_all_unobserved() {
+        let mut obs = BitLockerObserver::new();
+        let status = obs.observe();
+        assert_eq!(status.volumes, Observation::Unobserved);
     }
 }

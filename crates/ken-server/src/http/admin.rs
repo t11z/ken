@@ -16,7 +16,7 @@ use uuid::Uuid;
 
 use ken_protocol::command::{CommandEnvelope, CommandPayload};
 use ken_protocol::ids::{CommandId, EndpointId};
-use ken_protocol::status::{BitLockerStatus, DefenderStatus, FirewallStatus, WindowsUpdateStatus};
+use ken_protocol::status::OsStatusSnapshot;
 
 use crate::error::AppError;
 use crate::state::AppState;
@@ -65,6 +65,9 @@ struct EndpointRowTemplate<'a> {
 }
 
 /// Endpoint detail page with pre-extracted snapshot fields.
+///
+/// Per ADR-0019, subsystems are no longer `Option` at the snapshot level.
+/// When no snapshot exists yet, a default all-`Unobserved` snapshot is used.
 #[derive(Template)]
 #[template(path = "endpoint_detail.html")]
 struct EndpointDetailTemplate {
@@ -76,10 +79,7 @@ struct EndpointDetailTemplate {
     agent_version: String,
     enrolled_at: String,
     last_seen: String,
-    defender: Option<DefenderStatus>,
-    firewall: Option<FirewallStatus>,
-    bitlocker: Option<BitLockerStatus>,
-    windows_update: Option<WindowsUpdateStatus>,
+    snapshot: Option<OsStatusSnapshot>,
 }
 
 /// Data for a generated enrollment URL.
@@ -251,10 +251,7 @@ async fn endpoint_detail(
         agent_version: endpoint.agent_version,
         enrolled_at: endpoint.enrolled_at,
         last_seen,
-        defender: snapshot.as_ref().and_then(|s| s.defender.clone()),
-        firewall: snapshot.as_ref().and_then(|s| s.firewall.clone()),
-        bitlocker: snapshot.as_ref().and_then(|s| s.bitlocker.clone()),
-        windows_update: snapshot.as_ref().and_then(|s| s.windows_update.clone()),
+        snapshot,
     };
 
     Ok(Html(template.render().map_err(|e| {

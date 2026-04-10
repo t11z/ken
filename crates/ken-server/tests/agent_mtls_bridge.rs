@@ -16,7 +16,10 @@ use std::sync::Arc;
 
 use ken_protocol::heartbeat::Heartbeat;
 use ken_protocol::ids::{EndpointId, HeartbeatId};
-use ken_protocol::status::OsStatusSnapshot;
+use ken_protocol::status::{
+    BitLockerStatus, DefenderStatus, FirewallStatus, Observation, OsStatusSnapshot,
+    WindowsUpdateStatus,
+};
 use ken_protocol::SCHEMA_VERSION;
 use ken_server::ca::Ca;
 use ken_server::config::Config;
@@ -47,11 +50,31 @@ fn make_heartbeat() -> Heartbeat {
         sent_at: OffsetDateTime::now_utc(),
         status: OsStatusSnapshot {
             collected_at: OffsetDateTime::now_utc(),
-            defender: None,
-            firewall: None,
-            bitlocker: None,
-            windows_update: None,
-            recent_security_events: vec![],
+            defender: DefenderStatus {
+                antivirus_enabled: Observation::Unobserved,
+                real_time_protection_enabled: Observation::Unobserved,
+                tamper_protection_enabled: Observation::Unobserved,
+                signature_version: Observation::Unobserved,
+                signature_last_updated: Observation::Unobserved,
+                signature_age_days: Observation::Unobserved,
+                last_full_scan: Observation::Unobserved,
+                last_quick_scan: Observation::Unobserved,
+            },
+            firewall: FirewallStatus {
+                domain_profile: Observation::Unobserved,
+                private_profile: Observation::Unobserved,
+                public_profile: Observation::Unobserved,
+            },
+            bitlocker: BitLockerStatus {
+                volumes: Observation::Unobserved,
+            },
+            windows_update: WindowsUpdateStatus {
+                last_search_time: Observation::Unobserved,
+                last_install_time: Observation::Unobserved,
+                pending_update_count: Observation::Unobserved,
+                pending_critical_update_count: Observation::Unobserved,
+            },
+            recent_security_events: Observation::Unobserved,
         },
         audit_tail: vec![],
     }

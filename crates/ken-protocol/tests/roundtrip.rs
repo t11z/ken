@@ -13,13 +13,17 @@ use ken_protocol::heartbeat::{Heartbeat, HeartbeatAck};
 use ken_protocol::ids::{CommandId, EndpointId, HeartbeatId, SessionId};
 use ken_protocol::status::{
     BitLockerStatus, BitLockerVolumeStatus, DefenderStatus, FirewallProfileState, FirewallStatus,
-    OsStatusSnapshot, SecurityEvent, SecurityEventLevel, WindowsUpdateStatus,
+    Observation, OsStatusSnapshot, SecurityEvent, SecurityEventLevel, WindowsUpdateStatus,
 };
 use ken_protocol::SCHEMA_VERSION;
 
 fn now() -> OffsetDateTime {
     // Use a fixed point in time for deterministic tests.
     OffsetDateTime::from_unix_timestamp(1_700_000_000).unwrap()
+}
+
+fn earlier() -> OffsetDateTime {
+    OffsetDateTime::from_unix_timestamp(1_699_996_400).unwrap()
 }
 
 fn roundtrip<T>(value: &T) -> T
@@ -92,18 +96,158 @@ fn enrollment_response_roundtrip() {
     assert_eq!(resp, roundtrip(&resp));
 }
 
+// --- Observation<T> variants (ADR-0019) ---
+
+#[test]
+fn observation_fresh_roundtrip() {
+    let obs: Observation<u32> = Observation::Fresh {
+        value: 7,
+        observed_at: now(),
+    };
+    assert_eq!(obs, roundtrip(&obs));
+}
+
+#[test]
+fn observation_cached_roundtrip() {
+    let obs: Observation<u32> = Observation::Cached {
+        value: 3,
+        observed_at: earlier(),
+    };
+    assert_eq!(obs, roundtrip(&obs));
+}
+
+#[test]
+fn observation_unobserved_roundtrip() {
+    let obs: Observation<u32> = Observation::Unobserved;
+    assert_eq!(obs, roundtrip(&obs));
+}
+
+#[test]
+fn observation_fresh_json_shape() {
+    let obs: Observation<u32> = Observation::Fresh {
+        value: 7,
+        observed_at: now(),
+    };
+    let json: serde_json::Value = serde_json::to_value(&obs).unwrap();
+    assert_eq!(json["kind"], "fresh");
+    assert_eq!(json["value"], 7);
+    assert!(json["observed_at"].is_string());
+}
+
+#[test]
+fn observation_unobserved_json_shape() {
+    let obs: Observation<u32> = Observation::Unobserved;
+    let json: serde_json::Value = serde_json::to_value(&obs).unwrap();
+    assert_eq!(json["kind"], "unobserved");
+    assert!(json.get("value").is_none());
+}
+
+#[test]
+fn observation_option_datetime_roundtrip() {
+    // ADR-0019: Observation<Option<T>> for data-model-optional fields.
+    let with_value: Observation<Option<OffsetDateTime>> = Observation::Fresh {
+        value: Some(now()),
+        observed_at: now(),
+    };
+    assert_eq!(with_value, roundtrip(&with_value));
+
+    let without_value: Observation<Option<OffsetDateTime>> = Observation::Fresh {
+        value: None,
+        observed_at: now(),
+    };
+    assert_eq!(without_value, roundtrip(&without_value));
+
+    let unobserved: Observation<Option<OffsetDateTime>> = Observation::Unobserved;
+    assert_eq!(unobserved, roundtrip(&unobserved));
+}
+
+#[test]
+fn observation_value_helper() {
+    let fresh: Observation<u32> = Observation::Fresh {
+        value: 42,
+        observed_at: now(),
+    };
+    assert_eq!(fresh.value(), Some(&42));
+
+    let cached: Observation<u32> = Observation::Cached {
+        value: 10,
+        observed_at: now(),
+    };
+    assert_eq!(cached.value(), Some(&10));
+
+    let unobserved: Observation<u32> = Observation::Unobserved;
+    assert_eq!(unobserved.value(), None);
+}
+
 // --- Status types ---
 
 fn sample_defender() -> DefenderStatus {
     DefenderStatus {
-        antivirus_enabled: true,
-        real_time_protection_enabled: true,
-        tamper_protection_enabled: true,
-        signature_version: "1.401.622.0".to_string(),
-        signature_last_updated: now(),
-        signature_age_days: 0,
-        last_full_scan: Some(now()),
-        last_quick_scan: None,
+        antivirus_enabled: Observation::Fresh {
+            value: true,
+            observed_at: now(),
+        },
+        real_time_protection_enabled: Observation::Fresh {
+            value: true,
+            observed_at: now(),
+        },
+        tamper_protection_enabled: Observation::Fresh {
+            value: true,
+            observed_at: now(),
+        },
+        signature_version: Observation::Fresh {
+            value: "1.401.622.0".to_string(),
+            observed_at: now(),
+        },
+        signature_last_updated: Observation::Fresh {
+            value: now(),
+            observed_at: now(),
+        },
+        signature_age_days: Observation::Fresh {
+            value: 0,
+            observed_at: now(),
+        },
+        last_full_scan: Observation::Fresh {
+            value: Some(now()),
+            observed_at: now(),
+        },
+        last_quick_scan: Observation::Unobserved,
+    }
+}
+
+fn unobserved_defender() -> DefenderStatus {
+    DefenderStatus {
+        antivirus_enabled: Observation::Unobserved,
+        real_time_protection_enabled: Observation::Unobserved,
+        tamper_protection_enabled: Observation::Unobserved,
+        signature_version: Observation::Unobserved,
+        signature_last_updated: Observation::Unobserved,
+        signature_age_days: Observation::Unobserved,
+        last_full_scan: Observation::Unobserved,
+        last_quick_scan: Observation::Unobserved,
+    }
+}
+
+fn unobserved_firewall() -> FirewallStatus {
+    FirewallStatus {
+        domain_profile: Observation::Unobserved,
+        private_profile: Observation::Unobserved,
+        public_profile: Observation::Unobserved,
+    }
+}
+
+fn unobserved_bitlocker() -> BitLockerStatus {
+    BitLockerStatus {
+        volumes: Observation::Unobserved,
+    }
+}
+
+fn unobserved_windows_update() -> WindowsUpdateStatus {
+    WindowsUpdateStatus {
+        last_search_time: Observation::Unobserved,
+        last_install_time: Observation::Unobserved,
+        pending_update_count: Observation::Unobserved,
+        pending_critical_update_count: Observation::Unobserved,
     }
 }
 
@@ -114,20 +258,29 @@ fn defender_status_roundtrip() {
 }
 
 #[test]
+fn defender_status_all_unobserved_roundtrip() {
+    let status = unobserved_defender();
+    assert_eq!(status, roundtrip(&status));
+}
+
+#[test]
 fn firewall_status_roundtrip() {
     let status = FirewallStatus {
-        domain_profile: FirewallProfileState {
-            enabled: true,
-            default_inbound_action: "block".to_string(),
+        domain_profile: Observation::Fresh {
+            value: FirewallProfileState {
+                enabled: true,
+                default_inbound_action: "block".to_string(),
+            },
+            observed_at: now(),
         },
-        private_profile: FirewallProfileState {
-            enabled: true,
-            default_inbound_action: "block".to_string(),
+        private_profile: Observation::Cached {
+            value: FirewallProfileState {
+                enabled: true,
+                default_inbound_action: "block".to_string(),
+            },
+            observed_at: earlier(),
         },
-        public_profile: FirewallProfileState {
-            enabled: true,
-            default_inbound_action: "block".to_string(),
-        },
+        public_profile: Observation::Unobserved,
     };
     assert_eq!(status, roundtrip(&status));
 }
@@ -135,11 +288,14 @@ fn firewall_status_roundtrip() {
 #[test]
 fn bitlocker_status_roundtrip() {
     let status = BitLockerStatus {
-        volumes: vec![BitLockerVolumeStatus {
-            drive_letter: "C:".to_string(),
-            protection_status: "on".to_string(),
-            encryption_percentage: 100,
-        }],
+        volumes: Observation::Fresh {
+            value: vec![BitLockerVolumeStatus {
+                drive_letter: "C:".to_string(),
+                protection_status: "on".to_string(),
+                encryption_percentage: 100,
+            }],
+            observed_at: now(),
+        },
     };
     assert_eq!(status, roundtrip(&status));
 }
@@ -147,11 +303,26 @@ fn bitlocker_status_roundtrip() {
 #[test]
 fn windows_update_status_roundtrip() {
     let status = WindowsUpdateStatus {
-        last_search_time: Some(now()),
-        last_install_time: None,
-        pending_update_count: 3,
-        pending_critical_update_count: 1,
+        last_search_time: Observation::Fresh {
+            value: Some(now()),
+            observed_at: now(),
+        },
+        last_install_time: Observation::Unobserved,
+        pending_update_count: Observation::Fresh {
+            value: 3,
+            observed_at: now(),
+        },
+        pending_critical_update_count: Observation::Cached {
+            value: 1,
+            observed_at: earlier(),
+        },
     };
+    assert_eq!(status, roundtrip(&status));
+}
+
+#[test]
+fn windows_update_status_all_unobserved_roundtrip() {
+    let status = unobserved_windows_update();
     assert_eq!(status, roundtrip(&status));
 }
 
@@ -183,11 +354,24 @@ fn security_event_level_all_variants() {
 fn os_status_snapshot_roundtrip() {
     let snapshot = OsStatusSnapshot {
         collected_at: now(),
-        defender: Some(sample_defender()),
-        firewall: None,
-        bitlocker: None,
-        windows_update: None,
-        recent_security_events: vec![],
+        defender: sample_defender(),
+        firewall: unobserved_firewall(),
+        bitlocker: unobserved_bitlocker(),
+        windows_update: unobserved_windows_update(),
+        recent_security_events: Observation::Unobserved,
+    };
+    assert_eq!(snapshot, roundtrip(&snapshot));
+}
+
+#[test]
+fn os_status_snapshot_all_unobserved_roundtrip() {
+    let snapshot = OsStatusSnapshot {
+        collected_at: now(),
+        defender: unobserved_defender(),
+        firewall: unobserved_firewall(),
+        bitlocker: unobserved_bitlocker(),
+        windows_update: unobserved_windows_update(),
+        recent_security_events: Observation::Unobserved,
     };
     assert_eq!(snapshot, roundtrip(&snapshot));
 }
@@ -263,11 +447,11 @@ fn heartbeat_roundtrip() {
         sent_at: now(),
         status: OsStatusSnapshot {
             collected_at: now(),
-            defender: None,
-            firewall: None,
-            bitlocker: None,
-            windows_update: None,
-            recent_security_events: vec![],
+            defender: unobserved_defender(),
+            firewall: unobserved_firewall(),
+            bitlocker: unobserved_bitlocker(),
+            windows_update: unobserved_windows_update(),
+            recent_security_events: Observation::Unobserved,
         },
         audit_tail: vec![],
     };

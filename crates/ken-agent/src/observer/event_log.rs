@@ -8,21 +8,35 @@
 //! Bookmarks are persisted to `%ProgramData%\Ken\state\bookmarks\` so
 //! the service can resume after a restart.
 
-use ken_protocol::status::SecurityEvent;
+use ken_protocol::status::{Observation, SecurityEvent};
 
-/// Collect recent security events from the Event Log.
-///
-/// Returns an empty vec on non-Windows or on failure (an empty list
-/// means the observer was reached but had nothing to report).
-pub fn collect() -> Vec<SecurityEvent> {
-    #[cfg(windows)]
-    {
-        tracing::debug!("event log observer: EvtQuery not yet implemented");
-        Vec::new()
+use super::trait_def::Observer;
+
+/// Event Log observer struct per ADR-0018.
+pub struct EventLogObserver;
+
+impl EventLogObserver {
+    /// Create a new Event Log observer.
+    #[must_use]
+    pub fn new() -> Self {
+        Self
     }
-    #[cfg(not(windows))]
-    {
-        Vec::new()
+}
+
+impl Observer for EventLogObserver {
+    type Output = Observation<Vec<SecurityEvent>>;
+
+    fn name(&self) -> &'static str {
+        "event_log"
+    }
+
+    fn observe(&mut self) -> Observation<Vec<SecurityEvent>> {
+        #[cfg(windows)]
+        {
+            tracing::debug!("event log observer: EvtQuery not yet implemented");
+        }
+
+        Observation::Unobserved
     }
 }
 
@@ -58,8 +72,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn collect_returns_empty() {
-        assert!(collect().is_empty());
+    fn observe_returns_unobserved() {
+        let mut obs = EventLogObserver::new();
+        assert_eq!(obs.observe(), Observation::Unobserved);
     }
 
     #[test]
