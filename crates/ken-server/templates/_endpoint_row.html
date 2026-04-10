@@ -1,0 +1,9 @@
+<tr class="border-b">
+    <td class="px-4 py-3 font-medium">{{ endpoint.display_name.as_deref().unwrap_or(&endpoint.hostname) }}</td>
+    <td class="px-4 py-3">{{ endpoint.os_version }}</td>
+    <td class="px-4 py-3">{{ endpoint.last_heartbeat_at.as_deref().unwrap_or("never") }}</td>
+    <td class="px-4 py-3">{% if endpoint.revoked_at.is_some() %}<span class="text-red-600">●</span>{% else if endpoint.last_heartbeat_at.is_some() %}<span class="text-green-600">●</span>{% else %}<span class="text-gray-400">●</span>{% endif %}</td>
+    <td class="px-4 py-3">
+        <a href="/admin/endpoints/{{ endpoint.id }}" class="text-blue-600 hover:underline">Details</a>
+    </td>
+</tr>

@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Ken — Login</title>
+    <link rel="stylesheet" href="/static/tailwind.css">
+</head>
+<body class="bg-gray-100 min-h-screen flex items-center justify-center">
+    <div class="bg-white rounded shadow p-8 max-w-sm w-full">
+        <h1 class="text-2xl font-bold mb-6 text-center">Ken</h1>
+        {% if let Some(error) = error %}
+        <div class="bg-red-50 text-red-700 p-3 rounded mb-4 text-sm">{{ error }}</div>
+        {% endif %}
+        <form method="post" action="/admin/login">
+            <div class="mb-4">
+                <label for="token" class="block text-sm font-medium text-gray-700 mb-1">
+                    Access token
+                </label>
+                <input type="password" name="token" id="token" required autofocus
+                    class="w-full border rounded px-3 py-2 text-sm"
+                    placeholder="Paste your admin token">
+            </div>
+            <button type="submit"
+                class="w-full bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+                Log in
+            </button>
+        </form>
+    </div>
+</body>
+</html>

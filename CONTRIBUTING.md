@@ -57,11 +57,10 @@ The path for a new feature is:
 1. **Discussion issue.** Explain the problem, the proposed solution, and which existing ADR items the change touches.
 2. **ADR draft.** If the discussion reaches rough consensus that the change is worth pursuing, a maintainer drafts an ADR (or invites you to draft one, with guidance). The draft starts in status `Proposed`.
 3. **ADR review.** The draft is reviewed, refined, and either accepted or rejected. Acceptance is a deliberate act; it is not automatic from the discussion.
-4. **Prompt file.** Once an ADR is accepted, a prompt file is created in `prompts/` that instructs how the implementation should proceed.
-5. **Implementation.** Either Claude Code or a human contributor executes the prompt. Pull requests reference the prompt and the ADR.
-6. **Merge.** A maintainer reviews and merges.
+4. **Implementation.** Either Claude Code or a human contributor implements the change against the accepted ADR. Pull requests reference the ADR.
+5. **Merge.** A maintainer reviews and merges.
 
-This process sounds heavy for small features. In practice the ADR for a small feature is short (half a page), the prompt is specific and bounded, and the implementation is a single focused PR. The overhead buys traceability and a durable record of why the project looks the way it does.
+This process sounds heavy for small features. In practice the ADR for a small feature is short (half a page), the implementation is a single focused PR, and the overhead buys traceability and a durable record of why the project looks the way it does.
 
 ### 📝 Documentation improvements
 

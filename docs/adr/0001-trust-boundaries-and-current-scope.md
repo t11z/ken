@@ -4,7 +4,7 @@
 - **Date:** 2026-04-09
 - **Deciders:** @t11z
 - **Supersedes:** —
-- **Superseded by:** —
+- **Superseded by:** — (T1-7 partially extracted into ADR-0014, see Notes in ADR-0014)
 
 ## Context
 
@@ -34,7 +34,13 @@ These commitments are binding on all versions of Ken, all components, all deploy
 
 **T1-6. Kill switch available to the user.** The user of an endpoint can always disable or uninstall Ken locally, immediately, without the family IT chief's permission and without any network round-trip. A running Ken that the user wants to stop is a running Ken that stops. This is the ultimate safeguard of the consent model: trust is only meaningful when withdrawal is possible.
 
-**T1-7. Source availability under AGPL-3.0 or stricter.** Ken is licensed AGPL-3.0. Future relicensing toward a more permissive license (MIT, Apache, BSD, etc.) is not allowed. Future relicensing toward a stricter copyleft is allowed. This commitment exists so that users can audit Ken's behavior at any point and so that no future owner of the project can quietly close it.
+**T1-7. Source availability under AGPL-3.0 or stricter.** Ken's licensing
+commitment is recorded in its own ADR-0014. The substance has not changed:
+Ken is licensed AGPL-3.0-or-later, future relicensing toward a more permissive
+license is not allowed, future relicensing toward a stricter copyleft is
+allowed. The commitment exists so that users can audit Ken's behavior at any
+point and so that no future owner of the project can quietly close it. See
+ADR-0014 for the full rationale, consequences, and alternatives considered.
 
 ### Tier 2 — Current Scope Boundaries
 

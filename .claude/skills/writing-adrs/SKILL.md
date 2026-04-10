@@ -4,7 +4,7 @@ Load this skill when drafting or reviewing a new Architecture Decision Record. I
 
 ## Before you start
 
-Every ADR is written by the architect, in the Claude Project, in collaboration with the human owner. Claude Code does not author ADRs on its own initiative. If you are Claude Code and you find yourself wanting to write one, stop and surface the question — either the prompt you are working from should be updated to include the ADR draft, or the architect should draft the ADR first.
+Every ADR is written by the architect, in the Claude Project, in collaboration with the human owner. Claude Code does not author ADRs on its own initiative. If you are Claude Code and you find yourself wanting to write one, stop and surface the question — either the task description you are working from should be updated to include the ADR draft, or the architect should draft the ADR first.
 
 Before writing, confirm that the decision is actually ripe. An ADR that says "we will do X or Y, TBD" is not an ADR, it is a discussion note. The question the ADR answers should already have an answer; the ADR is where that answer is recorded.
 

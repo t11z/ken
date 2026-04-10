@@ -4,7 +4,7 @@
 //! service loop. On non-Windows platforms, it provides stub
 //! implementations so the crate compiles for cross-platform CI.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 /// The Windows service name as registered with the SCM.
@@ -22,13 +22,30 @@ pub const SERVICE_DESCRIPTION: &str =
 /// This is called from the service entry point after the service is
 /// registered and the status handle is obtained. It runs until the
 /// shutdown flag is set by the control handler.
+///
+/// Per ADR-0012, the very first thing the service does is check the
+/// kill switch state file. If active, the service refuses to start.
 pub async fn service_loop(shutdown: Arc<AtomicBool>) {
+    let data_dir = crate::config::data_dir();
+    let paths = crate::config::DataPaths::new(&data_dir);
+
+    // ADR-0012: Check kill switch before any other work.
+    if crate::killswitch::is_active(&paths.kill_switch_file) {
+        tracing::warn!("kill switch is active, refusing to start");
+        // In a full Windows service implementation, we would also:
+        // 1. Write an audit log entry KillSwitchStartupRefused
+        // 2. Set service startup type to SERVICE_DISABLED via ChangeServiceConfigW
+        // 3. Report ServiceState::Stopped to the SCM
+        // For now, just return immediately.
+        return;
+    }
+
     tracing::info!("service loop started");
 
-    while !shutdown.load(Ordering::SeqCst) {
-        // The actual work (heartbeat, commands, IPC) is wired up in
-        // sections 8-10. For now, just sleep and check the flag.
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    // Run the worker loop (heartbeat, commands, status collection).
+    // The worker loop handles its own kill-switch checks internally.
+    if let Err(e) = crate::worker::main_loop::run(shutdown, &paths).await {
+        tracing::error!(error = %e, "worker loop failed");
     }
 
     tracing::info!("service loop exiting");

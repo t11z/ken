@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Ken — {% block title %}{% endblock %}</title>
+    <link rel="stylesheet" href="/static/tailwind.css">
+    <script src="/static/htmx.min.js"></script>
+    <meta name="csrf-token" content="{{ csrf_token }}">
+</head>
+<body class="bg-gray-100 min-h-screen" hx-headers='{"X-CSRF-Token": "{{ csrf_token }}"}'>
+    <nav class="bg-white shadow-sm mb-6">
+        <div class="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
+            <a href="/admin" class="text-xl font-bold text-gray-800">Ken</a>
+            <div class="flex gap-4 text-sm">
+                <a href="/admin" class="text-gray-600 hover:text-gray-800">Dashboard</a>
+                <a href="/admin/enroll" class="text-gray-600 hover:text-gray-800">Enroll</a>
+                <a href="/admin/audit" class="text-gray-600 hover:text-gray-800">Audit</a>
+                <form method="post" action="/admin/logout" class="inline">
+                    <button type="submit" class="text-gray-600 hover:text-gray-800">Logout</button>
+                </form>
+            </div>
+        </div>
+    </nav>
+    <main class="max-w-5xl mx-auto px-4 pb-8">
+        {% block content %}{% endblock %}
+    </main>
+</body>
+</html>

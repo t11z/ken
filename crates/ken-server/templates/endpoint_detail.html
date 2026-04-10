@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+
+{% block title %}{{ display_name }}{% endblock %}
+
+{% block content %}
+<h1 class="text-2xl font-bold mb-6">{{ display_name }}</h1>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+    <div class="bg-white rounded shadow p-4">
+        <h2 class="font-semibold text-gray-600 mb-2">Identity</h2>
+        <dl class="text-sm space-y-1">
+            <div class="flex"><dt class="w-32 text-gray-500">Hostname:</dt><dd>{{ hostname }}</dd></div>
+            <div class="flex"><dt class="w-32 text-gray-500">OS:</dt><dd>{{ os_version }}</dd></div>
+            <div class="flex"><dt class="w-32 text-gray-500">Agent:</dt><dd>v{{ agent_version }}</dd></div>
+            <div class="flex"><dt class="w-32 text-gray-500">Enrolled:</dt><dd>{{ enrolled_at }}</dd></div>
+            <div class="flex"><dt class="w-32 text-gray-500">Last seen:</dt><dd>{{ last_seen }}</dd></div>
+        </dl>
+    </div>
+
+    {% if let Some(defender) = defender %}
+    <div class="bg-white rounded shadow p-4">
+        <h2 class="font-semibold text-gray-600 mb-2">Defender</h2>
+        <dl class="text-sm space-y-1">
+            <div class="flex"><dt class="w-32 text-gray-500">Antivirus:</dt><dd>{% if defender.antivirus_enabled %}<span class="text-green-600">Enabled</span>{% else %}<span class="text-red-600">Disabled</span>{% endif %}</dd></div>
+            <div class="flex"><dt class="w-32 text-gray-500">Real-time:</dt><dd>{% if defender.real_time_protection_enabled %}<span class="text-green-600">On</span>{% else %}<span class="text-red-600">Off</span>{% endif %}</dd></div>
+            <div class="flex"><dt class="w-32 text-gray-500">Signatures:</dt><dd>{{ defender.signature_version }}</dd></div>
+            <div class="flex"><dt class="w-32 text-gray-500">Sig age:</dt><dd>{{ defender.signature_age_days }} days</dd></div>
+        </dl>
+    </div>
+    {% endif %}
+
+    {% if let Some(firewall) = firewall %}
+    <div class="bg-white rounded shadow p-4">
+        <h2 class="font-semibold text-gray-600 mb-2">Firewall</h2>
+        <dl class="text-sm space-y-1">
+            <div class="flex"><dt class="w-32 text-gray-500">Domain:</dt><dd>{% if firewall.domain_profile.enabled %}<span class="text-green-600">On</span>{% else %}<span class="text-red-600">Off</span>{% endif %}</dd></div>
+            <div class="flex"><dt class="w-32 text-gray-500">Private:</dt><dd>{% if firewall.private_profile.enabled %}<span class="text-green-600">On</span>{% else %}<span class="text-red-600">Off</span>{% endif %}</dd></div>
+            <div class="flex"><dt class="w-32 text-gray-500">Public:</dt><dd>{% if firewall.public_profile.enabled %}<span class="text-green-600">On</span>{% else %}<span class="text-red-600">Off</span>{% endif %}</dd></div>
+        </dl>
+    </div>
+    {% endif %}
+
+    {% if let Some(bitlocker) = bitlocker %}
+    <div class="bg-white rounded shadow p-4">
+        <h2 class="font-semibold text-gray-600 mb-2">BitLocker</h2>
+        <dl class="text-sm space-y-1">
+            {% for vol in bitlocker.volumes %}
+            <div class="flex"><dt class="w-32 text-gray-500">{{ vol.drive_letter }}:</dt><dd>{{ vol.protection_status }} ({{ vol.encryption_percentage }}%)</dd></div>
+            {% endfor %}
+        </dl>
+    </div>
+    {% endif %}
+
+    {% if let Some(wu) = windows_update %}
+    <div class="bg-white rounded shadow p-4">
+        <h2 class="font-semibold text-gray-600 mb-2">Windows Update</h2>
+        <dl class="text-sm space-y-1">
+            <div class="flex"><dt class="w-32 text-gray-500">Pending:</dt><dd>{{ wu.pending_update_count }}</dd></div>
+            <div class="flex"><dt class="w-32 text-gray-500">Critical:</dt><dd>{{ wu.pending_critical_update_count }}</dd></div>
+        </dl>
+    </div>
+    {% endif %}
+</div>
+
+<div class="flex gap-2">
+    <a href="/admin/commands/{{ endpoint_id }}" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Send command</a>
+    <a href="/admin" class="bg-gray-200 text-gray-700 px-4 py-2 rounded hover:bg-gray-300">Back</a>
+</div>
+{% endblock %}

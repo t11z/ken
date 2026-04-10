@@ -26,10 +26,6 @@ const SESSION_DURATION_HOURS: i64 = 8;
 #[derive(Debug, Clone)]
 pub struct AuthenticatedAdmin {
     pub session_id: String,
-    #[expect(
-        dead_code,
-        reason = "csrf_token will be used in Phase 2 for form protection"
-    )]
     pub csrf_token: String,
 }
 

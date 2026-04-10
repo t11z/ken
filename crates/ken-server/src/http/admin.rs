@@ -1,8 +1,10 @@
 //! Admin web UI routes and handlers.
 //!
 //! The admin UI runs on the admin listener (default port 8444) and
-//! is protected by token-based session authentication.
+//! is protected by token-based session authentication. All HTML is
+//! rendered via askama templates per ADR-0013.
 
+use askama::Template;
 use axum::extract::{Form, Path, State};
 use axum::http::header::SET_COOKIE;
 use axum::response::{Html, IntoResponse, Redirect, Response};
@@ -14,12 +16,11 @@ use uuid::Uuid;
 
 use ken_protocol::command::{CommandEnvelope, CommandPayload};
 use ken_protocol::ids::{CommandId, EndpointId};
-
-use std::fmt::Write;
+use ken_protocol::status::{BitLockerStatus, DefenderStatus, FirewallStatus, WindowsUpdateStatus};
 
 use crate::error::AppError;
 use crate::state::AppState;
-use crate::storage::EnrollmentToken;
+use crate::storage::{Endpoint, EnrollmentToken, StoredAuditEvent};
 
 use super::auth::{self, AuthenticatedAdmin, SESSION_COOKIE};
 
@@ -30,6 +31,7 @@ pub fn routes() -> Router<AppState> {
         .route("/admin/login", post(login_submit))
         .route("/admin/logout", post(logout))
         .route("/admin", get(dashboard))
+        .route("/admin/endpoints/partial", get(endpoints_partial))
         .route("/admin/endpoints/{id}", get(endpoint_detail))
         .route("/admin/enroll", get(enroll_form))
         .route("/admin/enroll", post(enroll_submit))
@@ -38,10 +40,96 @@ pub fn routes() -> Router<AppState> {
         .route("/admin/commands/{endpoint_id}", post(command_submit))
 }
 
-// --- Login ---
+// --- Template structs ---
 
-async fn login_page() -> Html<String> {
-    Html(render_login(None))
+/// Login page template (standalone, does not extend base).
+#[derive(Template)]
+#[template(path = "login.html")]
+struct LoginTemplate {
+    error: Option<String>,
+}
+
+/// Dashboard page showing all endpoints.
+#[derive(Template)]
+#[template(path = "dashboard.html")]
+struct DashboardTemplate {
+    csrf_token: String,
+    endpoints: Vec<Endpoint>,
+}
+
+/// Partial template for htmx endpoint table body refresh.
+#[derive(Template)]
+#[template(path = "_endpoint_row.html")]
+struct EndpointRowTemplate<'a> {
+    endpoint: &'a Endpoint,
+}
+
+/// Endpoint detail page with pre-extracted snapshot fields.
+#[derive(Template)]
+#[template(path = "endpoint_detail.html")]
+struct EndpointDetailTemplate {
+    csrf_token: String,
+    display_name: String,
+    endpoint_id: String,
+    hostname: String,
+    os_version: String,
+    agent_version: String,
+    enrolled_at: String,
+    last_seen: String,
+    defender: Option<DefenderStatus>,
+    firewall: Option<FirewallStatus>,
+    bitlocker: Option<BitLockerStatus>,
+    windows_update: Option<WindowsUpdateStatus>,
+}
+
+/// Data for a generated enrollment URL.
+struct GeneratedEnrollment {
+    url: String,
+    token: String,
+    lifetime_minutes: u64,
+}
+
+/// Enrollment page (form or generated URL).
+#[derive(Template)]
+#[template(path = "enroll.html")]
+struct EnrollTemplate {
+    csrf_token: String,
+    enrollment: Option<GeneratedEnrollment>,
+}
+
+/// Audit log page.
+#[derive(Template)]
+#[template(path = "audit.html")]
+struct AuditTemplate {
+    csrf_token: String,
+    events: Vec<StoredAuditEvent>,
+}
+
+/// Command form page.
+#[derive(Template)]
+#[template(path = "commands.html")]
+struct CommandFormTemplate {
+    csrf_token: String,
+    endpoint_id: String,
+}
+
+/// Command sent confirmation page.
+#[derive(Template)]
+#[template(path = "command_sent.html")]
+struct CommandSentTemplate {
+    csrf_token: String,
+    command_type: String,
+    endpoint_id: String,
+    command_id: String,
+}
+
+// --- Handlers ---
+
+async fn login_page() -> Result<Html<String>, AppError> {
+    let template = LoginTemplate { error: None };
+    Ok(Html(template.render().map_err(|e| {
+        AppError::Internal(format!("template render error: {e}"))
+    })?))
 }
 
 #[derive(Deserialize)]
@@ -61,10 +149,25 @@ async fn login_submit(State(state): State<AppState>, Form(form): Form<LoginForm>
                     .insert(SET_COOKIE, cookie.parse().unwrap());
                 response
             }
-            Err(_) => Html(render_login(Some("Internal error"))).into_response(),
+            Err(_) => render_login_error("Internal error"),
         },
-        Ok(false) => Html(render_login(Some("Invalid access token"))).into_response(),
-        Err(_) => Html(render_login(Some("Internal error"))).into_response(),
+        Ok(false) => render_login_error("Invalid access token"),
+        Err(_) => render_login_error("Internal error"),
+    }
+}
+
+/// Render the login page with an error message.
+fn render_login_error(msg: &str) -> Response {
+    let template = LoginTemplate {
+        error: Some(msg.to_string()),
+    };
+    match template.render() {
+        Ok(html) => Html(html).into_response(),
+        Err(_) => (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            "template error",
+        )
+            .into_response(),
     }
 }
 
@@ -78,74 +181,44 @@ async fn logout(State(state): State<AppState>, admin: AuthenticatedAdmin) -> Res
     response
 }
 
-// --- Dashboard ---
-
 async fn dashboard(
+    State(state): State<AppState>,
+    admin: AuthenticatedAdmin,
+) -> Result<Html<String>, AppError> {
+    let endpoints = state.storage.list_endpoints().await?;
+
+    let template = DashboardTemplate {
+        csrf_token: admin.csrf_token,
+        endpoints,
+    };
+
+    Ok(Html(template.render().map_err(|e| {
+        AppError::Internal(format!("template render error: {e}"))
+    })?))
+}
+
+/// htmx partial: returns just the endpoint rows for polling refresh.
+async fn endpoints_partial(
     State(state): State<AppState>,
     _admin: AuthenticatedAdmin,
 ) -> Result<Html<String>, AppError> {
     let endpoints = state.storage.list_endpoints().await?;
 
-    let mut rows = String::new();
-    for ep in &endpoints {
-        let display = ep.display_name.as_deref().unwrap_or(&ep.hostname);
-        let last_seen = ep.last_heartbeat_at.as_deref().unwrap_or("never");
-        let status_class = if ep.revoked_at.is_some() {
-            "text-red-600"
-        } else if ep.last_heartbeat_at.is_some() {
-            "text-green-600"
-        } else {
-            "text-gray-400"
-        };
-
-        let _ = write!(
-            rows,
-            r#"<tr class="border-b">
-                <td class="px-4 py-3 font-medium">{display}</td>
-                <td class="px-4 py-3">{}</td>
-                <td class="px-4 py-3">{last_seen}</td>
-                <td class="px-4 py-3"><span class="{status_class}">●</span></td>
-                <td class="px-4 py-3">
-                    <a href="/admin/endpoints/{}" class="text-blue-600 hover:underline">Details</a>
-                </td>
-            </tr>"#,
-            ep.os_version, ep.id
+    let mut html = String::new();
+    for endpoint in &endpoints {
+        let row = EndpointRowTemplate { endpoint };
+        html.push_str(
+            &row.render()
+                .map_err(|e| AppError::Internal(format!("template render error: {e}")))?,
         );
     }
 
-    let content = format!(
-        r#"<h1 class="text-2xl font-bold mb-6">Endpoints</h1>
-        <div class="bg-white rounded shadow overflow-hidden">
-            <table class="w-full text-sm">
-                <thead class="bg-gray-50 text-left text-gray-500 uppercase text-xs">
-                    <tr>
-                        <th class="px-4 py-3">Name</th>
-                        <th class="px-4 py-3">OS</th>
-                        <th class="px-4 py-3">Last seen</th>
-                        <th class="px-4 py-3">Status</th>
-                        <th class="px-4 py-3">Actions</th>
-                    </tr>
-                </thead>
-                <tbody hx-get="/admin" hx-trigger="every 10s" hx-select="tbody" hx-swap="outerHTML">
-                    {rows}
-                </tbody>
-            </table>
-        </div>
-        <div class="mt-4">
-            <a href="/admin/enroll" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
-                Enroll new endpoint
-            </a>
-        </div>"#
-    );
-
-    Ok(Html(render_page("Dashboard", &content)))
+    Ok(Html(html))
 }
-
-// --- Endpoint detail ---
 
 async fn endpoint_detail(
     State(state): State<AppState>,
-    _admin: AuthenticatedAdmin,
+    admin: AuthenticatedAdmin,
     Path(id): Path<String>,
 ) -> Result<Html<String>, AppError> {
     let endpoint_id =
@@ -161,105 +234,43 @@ async fn endpoint_detail(
     let display_name = endpoint
         .display_name
         .as_deref()
-        .unwrap_or(&endpoint.hostname);
+        .unwrap_or(&endpoint.hostname)
+        .to_string();
+    let last_seen = endpoint
+        .last_heartbeat_at
+        .as_deref()
+        .unwrap_or("never")
+        .to_string();
 
-    let mut content = format!(
-        r#"<h1 class="text-2xl font-bold mb-6">{display_name}</h1>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-            <div class="bg-white rounded shadow p-4">
-                <h2 class="font-semibold text-gray-600 mb-2">Identity</h2>
-                <dl class="text-sm space-y-1">
-                    <div class="flex"><dt class="w-32 text-gray-500">Hostname:</dt><dd>{}</dd></div>
-                    <div class="flex"><dt class="w-32 text-gray-500">OS:</dt><dd>{}</dd></div>
-                    <div class="flex"><dt class="w-32 text-gray-500">Agent:</dt><dd>v{}</dd></div>
-                    <div class="flex"><dt class="w-32 text-gray-500">Enrolled:</dt><dd>{}</dd></div>
-                    <div class="flex"><dt class="w-32 text-gray-500">Last seen:</dt><dd>{}</dd></div>
-                </dl>
-            </div>"#,
-        endpoint.hostname,
-        endpoint.os_version,
-        endpoint.agent_version,
-        endpoint.enrolled_at,
-        endpoint.last_heartbeat_at.as_deref().unwrap_or("never"),
-    );
+    let template = EndpointDetailTemplate {
+        csrf_token: admin.csrf_token,
+        display_name,
+        endpoint_id: endpoint.id.clone(),
+        hostname: endpoint.hostname,
+        os_version: endpoint.os_version,
+        agent_version: endpoint.agent_version,
+        enrolled_at: endpoint.enrolled_at,
+        last_seen,
+        defender: snapshot.as_ref().and_then(|s| s.defender.clone()),
+        firewall: snapshot.as_ref().and_then(|s| s.firewall.clone()),
+        bitlocker: snapshot.as_ref().and_then(|s| s.bitlocker.clone()),
+        windows_update: snapshot.as_ref().and_then(|s| s.windows_update.clone()),
+    };
 
-    // Status snapshot cards
-    if let Some(snap) = snapshot {
-        if let Some(ref defender) = snap.defender {
-            let av_status = if defender.antivirus_enabled {
-                r#"<span class="text-green-600">Enabled</span>"#
-            } else {
-                r#"<span class="text-red-600">Disabled</span>"#
-            };
-            let rtp_status = if defender.real_time_protection_enabled {
-                r#"<span class="text-green-600">On</span>"#
-            } else {
-                r#"<span class="text-red-600">Off</span>"#
-            };
-
-            let _ = write!(
-                content,
-                r#"<div class="bg-white rounded shadow p-4">
-                    <h2 class="font-semibold text-gray-600 mb-2">Defender</h2>
-                    <dl class="text-sm space-y-1">
-                        <div class="flex"><dt class="w-32 text-gray-500">Antivirus:</dt><dd>{av_status}</dd></div>
-                        <div class="flex"><dt class="w-32 text-gray-500">Real-time:</dt><dd>{rtp_status}</dd></div>
-                        <div class="flex"><dt class="w-32 text-gray-500">Signatures:</dt><dd>{}</dd></div>
-                        <div class="flex"><dt class="w-32 text-gray-500">Sig age:</dt><dd>{} days</dd></div>
-                    </dl>
-                </div>"#,
-                defender.signature_version, defender.signature_age_days,
-            );
-        }
-
-        if let Some(ref wu) = snap.windows_update {
-            let _ = write!(
-                content,
-                r#"<div class="bg-white rounded shadow p-4">
-                    <h2 class="font-semibold text-gray-600 mb-2">Windows Update</h2>
-                    <dl class="text-sm space-y-1">
-                        <div class="flex"><dt class="w-32 text-gray-500">Pending:</dt><dd>{}</dd></div>
-                        <div class="flex"><dt class="w-32 text-gray-500">Critical:</dt><dd>{}</dd></div>
-                    </dl>
-                </div>"#,
-                wu.pending_update_count, wu.pending_critical_update_count,
-            );
-        }
-    }
-
-    content.push_str(
-        r#"</div>
-        <div class="flex gap-2">
-            <a href="/admin/commands/"#,
-    );
-    content.push_str(&id);
-    content.push_str(r#"" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Send command</a>
-            <a href="/admin" class="bg-gray-200 text-gray-700 px-4 py-2 rounded hover:bg-gray-300">Back</a>
-        </div>"#);
-
-    Ok(Html(render_page(display_name, &content)))
+    Ok(Html(template.render().map_err(|e| {
+        AppError::Internal(format!("template render error: {e}"))
+    })?))
 }
 
-// --- Enrollment ---
+async fn enroll_form(admin: AuthenticatedAdmin) -> Result<Html<String>, AppError> {
+    let template = EnrollTemplate {
+        csrf_token: admin.csrf_token,
+        enrollment: None,
+    };
 
-async fn enroll_form(_admin: AuthenticatedAdmin) -> Html<String> {
-    let content = r#"<h1 class="text-2xl font-bold mb-6">Enroll new endpoint</h1>
-        <form method="post" action="/admin/enroll" class="bg-white rounded shadow p-6 max-w-md">
-            <div class="mb-4">
-                <label for="display_name" class="block text-sm font-medium text-gray-700 mb-1">
-                    Display name (optional)
-                </label>
-                <input type="text" name="display_name" id="display_name"
-                    class="w-full border rounded px-3 py-2 text-sm"
-                    placeholder="e.g., Mom's Laptop">
-            </div>
-            <button type="submit"
-                class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
-                Create enrollment URL
-            </button>
-        </form>"#;
-
-    Html(render_page("Enroll", content))
+    Ok(Html(template.render().map_err(|e| {
+        AppError::Internal(format!("template render error: {e}"))
+    })?))
 }
 
 #[derive(Deserialize)]
@@ -269,7 +280,7 @@ struct EnrollForm {
 
 async fn enroll_submit(
     State(state): State<AppState>,
-    _admin: AuthenticatedAdmin,
+    admin: AuthenticatedAdmin,
     Form(form): Form<EnrollForm>,
 ) -> Result<Html<String>, AppError> {
     let token_value = Uuid::new_v4().to_string();
@@ -294,103 +305,48 @@ async fn enroll_submit(
     );
     let lifetime_min = state.config.enrollment.token_lifetime_seconds / 60;
 
-    let content = format!(
-        r#"<h1 class="text-2xl font-bold mb-6">Enrollment URL created</h1>
-        <div class="bg-white rounded shadow p-6 max-w-lg">
-            <p class="text-sm text-gray-600 mb-4">
-                Send this URL to the family member. It expires in {lifetime_min} minutes.
-            </p>
-            <div class="bg-gray-50 border rounded p-3 font-mono text-sm break-all mb-4">
-                {enroll_url}
-            </div>
-            <p class="text-xs text-gray-400">
-                Token: {token_value}
-            </p>
-        </div>
-        <div class="mt-4">
-            <a href="/admin" class="bg-gray-200 text-gray-700 px-4 py-2 rounded hover:bg-gray-300">Back to dashboard</a>
-        </div>"#
-    );
+    let template = EnrollTemplate {
+        csrf_token: admin.csrf_token,
+        enrollment: Some(GeneratedEnrollment {
+            url: enroll_url,
+            token: token_value,
+            lifetime_minutes: lifetime_min,
+        }),
+    };
 
-    Ok(Html(render_page("Enrollment URL", &content)))
+    Ok(Html(template.render().map_err(|e| {
+        AppError::Internal(format!("template render error: {e}"))
+    })?))
 }
-
-// --- Audit log ---
 
 async fn audit_log(
     State(state): State<AppState>,
-    _admin: AuthenticatedAdmin,
+    admin: AuthenticatedAdmin,
 ) -> Result<Html<String>, AppError> {
     let events = state.storage.recent_audit_events(100).await?;
 
-    let mut rows = String::new();
-    for event in &events {
-        let ep = event.endpoint_id.as_deref().unwrap_or("-");
-        let _ = write!(
-            rows,
-            r#"<tr class="border-b text-sm">
-                <td class="px-4 py-2">{}</td>
-                <td class="px-4 py-2">{}</td>
-                <td class="px-4 py-2 font-mono text-xs">{ep}</td>
-                <td class="px-4 py-2">{}</td>
-                <td class="px-4 py-2">{}</td>
-            </tr>"#,
-            event.occurred_at, event.source, event.kind, event.message
-        );
-    }
+    let template = AuditTemplate {
+        csrf_token: admin.csrf_token,
+        events,
+    };
 
-    let content = format!(
-        r#"<h1 class="text-2xl font-bold mb-6">Audit log</h1>
-        <div class="bg-white rounded shadow overflow-hidden">
-            <table class="w-full text-sm">
-                <thead class="bg-gray-50 text-left text-gray-500 uppercase text-xs">
-                    <tr>
-                        <th class="px-4 py-3">Time</th>
-                        <th class="px-4 py-3">Source</th>
-                        <th class="px-4 py-3">Endpoint</th>
-                        <th class="px-4 py-3">Kind</th>
-                        <th class="px-4 py-3">Message</th>
-                    </tr>
-                </thead>
-                <tbody>{rows}</tbody>
-            </table>
-        </div>"#
-    );
-
-    Ok(Html(render_page("Audit log", &content)))
+    Ok(Html(template.render().map_err(|e| {
+        AppError::Internal(format!("template render error: {e}"))
+    })?))
 }
 
-// --- Commands ---
+async fn command_form(
+    admin: AuthenticatedAdmin,
+    Path(endpoint_id): Path<String>,
+) -> Result<Html<String>, AppError> {
+    let template = CommandFormTemplate {
+        csrf_token: admin.csrf_token,
+        endpoint_id,
+    };
 
-async fn command_form(_admin: AuthenticatedAdmin, Path(endpoint_id): Path<String>) -> Html<String> {
-    let content = format!(
-        r#"<h1 class="text-2xl font-bold mb-6">Send command</h1>
-        <form method="post" action="/admin/commands/{endpoint_id}" class="bg-white rounded shadow p-6 max-w-md">
-            <div class="mb-4">
-                <label class="block text-sm font-medium text-gray-700 mb-2">Command type</label>
-                <div class="space-y-2">
-                    <label class="flex items-center">
-                        <input type="radio" name="command_type" value="ping" checked class="mr-2">
-                        <span>Ping</span>
-                    </label>
-                    <label class="flex items-center">
-                        <input type="radio" name="command_type" value="refresh_status" class="mr-2">
-                        <span>Refresh status</span>
-                    </label>
-                    <label class="flex items-center text-gray-400">
-                        <input type="radio" name="command_type" value="remote_session" disabled class="mr-2">
-                        <span>Request remote session (Phase 2)</span>
-                    </label>
-                </div>
-            </div>
-            <button type="submit"
-                class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
-                Send
-            </button>
-        </form>"#
-    );
-
-    Html(render_page("Send command", &content))
+    Ok(Html(template.render().map_err(|e| {
+        AppError::Internal(format!("template render error: {e}"))
+    })?))
 }
 
 #[derive(Deserialize)]
@@ -400,7 +356,7 @@ struct CommandForm {
 
 async fn command_submit(
     State(state): State<AppState>,
-    _admin: AuthenticatedAdmin,
+    admin: AuthenticatedAdmin,
     Path(endpoint_id_str): Path<String>,
     Form(form): Form<CommandForm>,
 ) -> Result<Html<String>, AppError> {
@@ -423,7 +379,6 @@ async fn command_submit(
 
     state.storage.queue_command(&endpoint_id, &envelope).await?;
 
-    // Audit event
     state
         .storage
         .append_audit_event(
@@ -436,100 +391,16 @@ async fn command_submit(
         )
         .await?;
 
-    let content = format!(
-        r#"<h1 class="text-2xl font-bold mb-6">Command sent</h1>
-        <div class="bg-white rounded shadow p-6 max-w-md">
-            <p class="text-sm">
-                <strong>{}</strong> command queued for endpoint {endpoint_id_str}.
-            </p>
-            <p class="text-xs text-gray-400 mt-2">
-                Command ID: {}
-            </p>
-        </div>
-        <div class="mt-4">
-            <a href="/admin/endpoints/{endpoint_id_str}" class="bg-gray-200 text-gray-700 px-4 py-2 rounded hover:bg-gray-300">Back to endpoint</a>
-        </div>"#,
-        form.command_type, envelope.command_id
-    );
+    let template = CommandSentTemplate {
+        csrf_token: admin.csrf_token,
+        command_type: form.command_type,
+        endpoint_id: endpoint_id_str,
+        command_id: envelope.command_id.to_string(),
+    };
 
-    Ok(Html(render_page("Command sent", &content)))
-}
-
-// --- Template rendering helpers ---
-
-/// Render the login page.
-fn render_login(error: Option<&str>) -> String {
-    let error_html = error
-        .map(|e| {
-            format!(r#"<div class="bg-red-50 text-red-700 p-3 rounded mb-4 text-sm">{e}</div>"#)
-        })
-        .unwrap_or_default();
-
-    format!(
-        r#"<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Ken — Login</title>
-    <link rel="stylesheet" href="/static/tailwind.css">
-</head>
-<body class="bg-gray-100 min-h-screen flex items-center justify-center">
-    <div class="bg-white rounded shadow p-8 max-w-sm w-full">
-        <h1 class="text-2xl font-bold mb-6 text-center">Ken</h1>
-        {error_html}
-        <form method="post" action="/admin/login">
-            <div class="mb-4">
-                <label for="token" class="block text-sm font-medium text-gray-700 mb-1">
-                    Access token
-                </label>
-                <input type="password" name="token" id="token" required autofocus
-                    class="w-full border rounded px-3 py-2 text-sm"
-                    placeholder="Paste your admin token">
-            </div>
-            <button type="submit"
-                class="w-full bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
-                Log in
-            </button>
-        </form>
-    </div>
-</body>
-</html>"#
-    )
-}
-
-/// Render a full page with the shared layout.
-fn render_page(title: &str, content: &str) -> String {
-    format!(
-        r#"<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Ken — {title}</title>
-    <link rel="stylesheet" href="/static/tailwind.css">
-    <script src="/static/htmx.min.js"></script>
-</head>
-<body class="bg-gray-100 min-h-screen">
-    <nav class="bg-white shadow-sm mb-6">
-        <div class="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
-            <a href="/admin" class="text-xl font-bold text-gray-800">Ken</a>
-            <div class="flex gap-4 text-sm">
-                <a href="/admin" class="text-gray-600 hover:text-gray-800">Dashboard</a>
-                <a href="/admin/enroll" class="text-gray-600 hover:text-gray-800">Enroll</a>
-                <a href="/admin/audit" class="text-gray-600 hover:text-gray-800">Audit</a>
-                <form method="post" action="/admin/logout" class="inline">
-                    <button type="submit" class="text-gray-600 hover:text-gray-800">Logout</button>
-                </form>
-            </div>
-        </div>
-    </nav>
-    <main class="max-w-5xl mx-auto px-4 pb-8">
-        {content}
-    </main>
-</body>
-</html>"#
-    )
+    Ok(Html(template.render().map_err(|e| {
+        AppError::Internal(format!("template render error: {e}"))
+    })?))
 }
 
 fn format_time(t: OffsetDateTime) -> String {

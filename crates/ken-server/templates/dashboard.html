@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<h1 class="text-2xl font-bold mb-6">Endpoints</h1>
+<div class="bg-white rounded shadow overflow-hidden">
+    <table class="w-full text-sm">
+        <thead class="bg-gray-50 text-left text-gray-500 uppercase text-xs">
+            <tr>
+                <th class="px-4 py-3">Name</th>
+                <th class="px-4 py-3">OS</th>
+                <th class="px-4 py-3">Last seen</th>
+                <th class="px-4 py-3">Status</th>
+                <th class="px-4 py-3">Actions</th>
+            </tr>
+        </thead>
+        <tbody hx-get="/admin/endpoints/partial" hx-trigger="every 10s" hx-swap="innerHTML">
+            {% for endpoint in endpoints %}
+            {% include "_endpoint_row.html" %}
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+<div class="mt-4">
+    <a href="/admin/enroll" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+        Enroll new endpoint
+    </a>
+</div>
+{% endblock %}

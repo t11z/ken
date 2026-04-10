@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block title %}Enroll{% endblock %}
+
+{% block content %}
+<h1 class="text-2xl font-bold mb-6">Enroll new endpoint</h1>
+{% match enrollment %}
+{% when None %}
+<form method="post" action="/admin/enroll" class="bg-white rounded shadow p-6 max-w-md">
+    <div class="mb-4">
+        <label for="display_name" class="block text-sm font-medium text-gray-700 mb-1">
+            Display name (optional)
+        </label>
+        <input type="text" name="display_name" id="display_name"
+            class="w-full border rounded px-3 py-2 text-sm"
+            placeholder="e.g., Mom's Laptop">
+    </div>
+    <button type="submit"
+        class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+        Create enrollment URL
+    </button>
+</form>
+{% when Some with (e) %}
+<div class="bg-white rounded shadow p-6 max-w-lg">
+    <p class="text-sm text-gray-600 mb-4">
+        Send this URL to the family member. It expires in {{ e.lifetime_minutes }} minutes.
+    </p>
+    <div class="bg-gray-50 border rounded p-3 font-mono text-sm break-all mb-4">
+        {{ e.url }}
+    </div>
+    <p class="text-xs text-gray-400">
+        Token: {{ e.token }}
+    </p>
+</div>
+<div class="mt-4">
+    <a href="/admin" class="bg-gray-200 text-gray-700 px-4 py-2 rounded hover:bg-gray-300">Back to dashboard</a>
+</div>
+{% endmatch %}
+{% endblock %}

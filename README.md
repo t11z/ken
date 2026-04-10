@@ -1,4 +1,4 @@
-[![ci](https://github.com/t11z/ken/actions/workflows/ci.yml/badge.svg)](https://github.com/t11z/ken/actions/workflows/ci.yml) [![Dependabot Updates](https://github.com/t11z/ken/actions/workflows/dependabot/dependabot-updates/badge.svg)](https://github.com/t11z/ken/actions/workflows/dependabot/dependabot-updates) [![release](https://github.com/t11z/ken/actions/workflows/workflow-release.yml/badge.svg)](https://github.com/t11z/ken/actions/workflows/workflow-release.yml)
+[![ci](https://github.com/t11z/ken/actions/workflows/ci.yml/badge.svg)](https://github.com/t11z/ken/actions/workflows/ci.yml) [![Dependabot Updates](https://github.com/t11z/ken/actions/workflows/dependabot/dependabot-updates/badge.svg)](https://github.com/t11z/ken/actions/workflows/dependabot/dependabot-updates) [![release](https://github.com/t11z/ken/actions/workflows/release.yml/badge.svg)](https://github.com/t11z/ken/actions/workflows/release.yml)
 # 🐕 Ken
 
 *A quiet guardian for your family's PCs.*
@@ -60,7 +60,7 @@ Total hands-on time per endpoint: about two minutes.
 ## 📖 Documentation
 
 - 🏛️ [Architecture Decision Records](docs/adr/) — the why behind every major choice
-- 🗺️ [Repository Structure](docs/repository-structure.md) — where things live and why
+- 🗺️ [Repository Structure](docs/architecture/repository-structure.md) — where things live and why
 - 🖼️ [Architecture Diagrams](docs/architecture/) — visual overview of how components fit together
 - 👤 [User Documentation](docs/user/) — install guides, consent explainer, audit log reader
 
@@ -89,7 +89,7 @@ Before opening an issue or a pull request, please read:
 
 1. [ADR-0001](docs/adr/0001-trust-boundaries-and-current-scope.md) — what Ken will and will not do. A lot of reasonable-sounding feature requests are explicitly out of scope, and knowing why will save everyone time.
 2. [CONTRIBUTING.md](CONTRIBUTING.md) — how to file issues, how to propose changes, and how the review process works.
-3. [The repository structure document](docs/repository-structure.md) — where things live and why.
+3. [The repository structure document](docs/architecture/repository-structure.md) — where things live and why.
 
 Good first contributions include: documentation improvements, additional ADR drafts for open questions, new tests, and bug fixes with clear reproductions. Larger changes should start as a discussion before any code is written.
 

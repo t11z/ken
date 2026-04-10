@@ -14,11 +14,10 @@ disregard the sections you have not yet completed.
 
 <!--
 What problem is being solved? Link to the issue this PR resolves.
-If the change is driven by an ADR or a prompt file, link to those.
+If the change is driven by an ADR, link to it.
 -->
 
 - Resolves #
-- Prompt file (if applicable): `prompts/...`
 - ADR(s) this implements or references:
 
 ## How the change was validated

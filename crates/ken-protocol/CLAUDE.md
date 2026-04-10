@@ -41,11 +41,11 @@ Data that must never travel on the wire, per ADR-0001:
 - Scheduled screenshots (T2-4)
 - Any user data beyond what is strictly necessary for status reporting
 
-If a prompt asks you to add a type that would carry any of these, stop and surface the question. A current Tier 2 boundary can be loosened through an ADR, but never silently through a new type in this crate.
+If a task asks you to add a type that would carry any of these, stop and surface the question. A current Tier 2 boundary can be loosened through an ADR, but never silently through a new type in this crate.
 
 ## Dependencies
 
-This crate has **no dependencies on `ken-agent` or `ken-server`**. The dependency direction is strictly one-way: both of those depend on this crate, and this crate depends on neither. If a prompt asks you to reach back from `ken-protocol` into `ken-server` or `ken-agent`, stop and surface the question to the architect — the request likely indicates a missing abstraction.
+This crate has **no dependencies on `ken-agent` or `ken-server`**. The dependency direction is strictly one-way: both of those depend on this crate, and this crate depends on neither. If a task asks you to reach back from `ken-protocol` into `ken-server` or `ken-agent`, stop and surface the question to the architect — the request likely indicates a missing abstraction.
 
 External dependencies are kept minimal. Allowed by default:
 
@@ -76,4 +76,4 @@ Property-based testing with `proptest` is encouraged for types with non-trivial 
 - Windows-specific code — lives in `ken-agent`
 - Server configuration loading — lives in `ken-server`
 
-If a prompt asks you to add any of the above to this crate, stop and verify the prompt. The crate is kept small on purpose.
+If a task asks you to add any of the above to this crate, stop and verify with the architect. The crate is kept small on purpose.

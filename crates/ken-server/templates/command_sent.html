@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+
+{% block title %}Command sent{% endblock %}
+
+{% block content %}
+<h1 class="text-2xl font-bold mb-6">Command sent</h1>
+<div class="bg-white rounded shadow p-6 max-w-md">
+    <p class="text-sm">
+        <strong>{{ command_type }}</strong> command queued for endpoint {{ endpoint_id }}.
+    </p>
+    <p class="text-xs text-gray-400 mt-2">
+        Command ID: {{ command_id }}
+    </p>
+</div>
+<div class="mt-4">
+    <a href="/admin/endpoints/{{ endpoint_id }}" class="bg-gray-200 text-gray-700 px-4 py-2 rounded hover:bg-gray-300">Back to endpoint</a>
+</div>
+{% endblock %}

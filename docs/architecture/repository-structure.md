@@ -71,14 +71,6 @@ All project documentation that is not code and not tooling configuration. Split 
 
 `docs/user/` holds end-user documentation: installation guides, the consent model explainer, the audit log reader's guide, troubleshooting notes. This is the material that gets rendered to GitHub Pages for the project website, and it is written for family IT chiefs and their users, not for developers.
 
-### `prompts/`
-
-Claude Code prompt files, organized by phase and area. Each prompt is a self-contained markdown file that instructs Claude Code to perform a specific, bounded piece of work. Prompts reference ADRs by number, name the files they are allowed to touch, and describe acceptance criteria.
-
-Prompts are off-limits to Claude Code itself without an explicit instruction — Claude Code executes prompts, it does not author them. The architect writes prompts in the Claude Project and commits them here before Claude Code runs against them.
-
-Early in the project, prompts are organized flat (`prompts/0001-scaffold-workspace.md`, `prompts/0002-ken-protocol-initial-types.md`). As the project grows, they may be grouped by phase (`prompts/phase-1/`, `prompts/phase-2/`). The exact organization is not a load-bearing decision and can be reshuffled.
-
 ## Top-level files
 
 `CLAUDE.md` is the root entry point for any LLM working in this repository. It defines the Architect/Implementer role separation, the list of files Claude Code may not modify, and the high-level conventions that apply to the whole workspace. Sub-`CLAUDE.md` files in individual crates refine but do not override the root.
@@ -110,7 +102,6 @@ Early in the project, prompts are organized flat (`prompts/0001-scaffold-workspa
 - A new architecture decision → a new ADR under `docs/adr/`
 - A new design doc that is not a decision → `docs/architecture/`
 - A new end-user-facing document → `docs/user/`
-- A new prompt for Claude Code → `prompts/`
 - A new skill for Claude Code → `.claude/skills/`
 - A new slash command for Claude Code → `.claude/commands/`
 - A new crate → `crates/`, and update the workspace `Cargo.toml` through an ADR-authorized prompt

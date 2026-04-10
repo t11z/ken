@@ -13,7 +13,6 @@ mod config;
 mod error;
 mod http;
 mod state;
-#[allow(dead_code)] // Many storage methods are prepared for use in later sections
 mod storage;
 
 use ca::Ca;
@@ -70,31 +69,49 @@ async fn main() -> anyhow::Result<()> {
 
     // Build routers
     let admin_app = http::admin_router(state.clone());
-    let agent_app = http::agent_router(state);
+    let agent_app = http::agent_router(state.clone());
+
+    // Load server TLS certificate and key for both listeners
+    let server_cert_pem = std::fs::read_to_string(&tls_config.server_certificate_path)?;
+    let server_key_pem = std::fs::read_to_string(&tls_config.server_key_path)?;
+
+    // Build the custom client cert verifier for the agent listener (ADR-0008)
+    let client_verifier = Arc::new(http::tls::KenClientCertVerifier::new(
+        state.storage.clone(),
+        &state.ca,
+    )?);
+
+    // Admin listener: server TLS only, no client cert required
+    let admin_tls_config =
+        http::tls::build_server_tls_config(&server_cert_pem, &server_key_pem, None)?;
+    let admin_rustls =
+        axum_server::tls_rustls::RustlsConfig::from_config(Arc::new(admin_tls_config));
+
+    // Agent listener: mTLS with custom client cert verifier
+    let agent_tls_config = http::tls::build_server_tls_config(
+        &server_cert_pem,
+        &server_key_pem,
+        Some(client_verifier),
+    )?;
+    let agent_rustls =
+        axum_server::tls_rustls::RustlsConfig::from_config(Arc::new(agent_tls_config));
 
     tracing::info!(
         admin = %admin_addr,
         agent = %agent_addr,
-        "starting listeners"
+        "starting TLS listeners"
     );
-
-    // Run both listeners concurrently.
-    // The agent listener should use mTLS (rustls with client cert verifier),
-    // but for Phase 1 we start both as plain TCP+TLS or plain HTTP for
-    // development. Full mTLS enforcement is wired up when the TLS listener
-    // module is completed.
-    let admin_listener = tokio::net::TcpListener::bind(admin_addr).await?;
-    let agent_listener = tokio::net::TcpListener::bind(agent_addr).await?;
 
     tracing::info!("ken-server ready");
 
+    // Run both TLS listeners concurrently (ADR-0004)
     tokio::select! {
-        result = axum::serve(admin_listener, admin_app) => {
+        result = axum_server::bind_rustls(admin_addr, admin_rustls).serve(admin_app.into_make_service()) => {
             if let Err(e) = result {
                 tracing::error!(error = %e, "admin listener failed");
             }
         }
-        result = axum::serve(agent_listener, agent_app) => {
+        result = axum_server::bind_rustls(agent_addr, agent_rustls).serve(agent_app.into_make_service()) => {
             if let Err(e) = result {
                 tracing::error!(error = %e, "agent listener failed");
             }
