@@ -52,6 +52,7 @@ pub fn pipe_name(session_id: u32) -> String {
 /// This function blocks and should be called via
 /// `tokio::task::spawn_blocking`. It creates a named pipe, sets
 /// up security, and loops accepting connections.
+#[allow(clippy::too_many_lines)] // Windows pipe server loop: the connection lifecycle is clearest as a single function
 pub fn run(
     consent_state: SharedConsentState,
     shutdown: Arc<AtomicBool>,
@@ -465,9 +466,10 @@ fn build_security_descriptor(session_id: u32) -> Result<SecurityDescriptorHolder
         let acl_size = usize::from((*(acl_ptr.cast::<windows::Win32::Security::ACL>())).AclSize);
         let mut buf = vec![0u8; acl_size];
         std::ptr::copy_nonoverlapping(acl_ptr.cast::<u8>(), buf.as_mut_ptr(), acl_size);
-        windows::Win32::Foundation::LocalFree(windows::Win32::Foundation::HLOCAL(
+        // windows 0.62 wraps LocalFree to take Option<HLOCAL>.
+        windows::Win32::Foundation::LocalFree(Some(windows::Win32::Foundation::HLOCAL(
             acl_ptr.cast::<std::ffi::c_void>(),
-        ));
+        )));
         buf
     };
 
