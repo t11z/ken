@@ -99,7 +99,9 @@ async fn request_remote_session(
 
     // Place the pending consent request for the tray app to discover.
     {
-        let mut guard = consent_state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut guard = consent_state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
 
         #[cfg(windows)]
         {
@@ -127,7 +129,9 @@ async fn request_remote_session(
 
     // Clean up the pending request if it is still there (timeout case).
     {
-        let mut guard = consent_state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut guard = consent_state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         // If the request is still pending (same command_id), remove it.
         if guard.as_ref().is_some_and(|p| p.command_id == command_id) {
             *guard = None;
