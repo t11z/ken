@@ -14,7 +14,7 @@ variant is a pure implementation detail or whether it touches a wire format
 or schema that requires architectural review.
 """
 
-include = [
+paths = [
   # Audit event type definitions — wherever they live
   "crates/ken-agent/src/audit/**/*.rs",
   "crates/ken-agent/src/audit.rs",
@@ -39,21 +39,6 @@ include = [
   "crates/ken-agent/CLAUDE.md",
   "crates/ken-protocol/CLAUDE.md",
   "crates/ken-server/CLAUDE.md",
-]
-
-# Grep patterns to surface call sites even if the file paths above miss them
-grep_patterns = [
-  "AuditEvent",
-  "audit_log",
-  "AuditLog",
-  "write_audit",
-  "log_audit",
-  "audit::",
-]
-
-exclude = [
-  "**/tests/**",
-  "**/target/**",
 ]
 
 [topics.agent-observers]
@@ -169,4 +154,6 @@ additional = [
   "**/*.p12",
   "**/*.pfx",
   "**/fixtures/**/*.bin",
+  "**/tests/**",
+  "**/target/**",
 ]
