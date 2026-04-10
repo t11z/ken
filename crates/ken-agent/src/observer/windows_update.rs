@@ -55,25 +55,30 @@ impl WindowsUpdateObserver {
     /// provided Tokio handle. On non-Windows, no background work occurs.
     #[must_use]
     pub fn new(shutdown: Arc<AtomicBool>) -> Self {
-        let (cache_tx, cache_rx) = watch::channel(None);
-
-        #[cfg(windows)]
-        {
-            let sd = shutdown.clone();
-            // Spawn the background refresh task per ADR-0020.
-            tokio::spawn(async move {
-                wua_background_loop(cache_tx, sd).await;
-            });
-        }
-
-        // On non-Windows, drop the sender so the channel is inert.
-        #[cfg(not(windows))]
-        drop(cache_tx);
-
+        let cache_rx = Self::init_background(shutdown.clone());
         Self {
             cache_rx,
             _shutdown: shutdown,
         }
+    }
+
+    /// On Windows, spawn the WUA background refresh task and return the
+    /// receiver end of the cache channel. On non-Windows, return a
+    /// receiver whose sender has been dropped (permanently `None`).
+    #[cfg(windows)]
+    fn init_background(shutdown: Arc<AtomicBool>) -> watch::Receiver<Option<WuaCounts>> {
+        let (cache_tx, cache_rx) = watch::channel(None);
+        tokio::spawn(async move {
+            wua_background_loop(cache_tx, shutdown).await;
+        });
+        cache_rx
+    }
+
+    /// On non-Windows, no background task — return an inert channel.
+    #[cfg(not(windows))]
+    fn init_background(_shutdown: Arc<AtomicBool>) -> watch::Receiver<Option<WuaCounts>> {
+        let (_cache_tx, cache_rx) = watch::channel(None);
+        cache_rx
     }
 
     /// Create an observer for testing without spawning a background task.
@@ -228,7 +233,7 @@ async fn wua_background_loop(
 /// creates an `IUpdateSession`, searches for `IsInstalled=0`, and
 /// counts total and critical updates.
 ///
-/// Per ADR-0020, "critical" means `MsrcSeverity == "Critical"` on the
+/// Per ADR-0020, "critical" means `MsrcSeverity` == `"Critical"` on the
 /// `IUpdate` interface. All failure modes return an error; the caller
 /// maps every error to `Observation::Unobserved`.
 #[cfg(windows)]
@@ -240,16 +245,8 @@ fn wua_search() -> Result<WuaCounts, WuaError> {
     };
     use windows::Win32::System::UpdateAgent::{IUpdateSearcher, IUpdateSession, UpdateSession};
 
-    // Initialize COM in the spawned thread with STA apartment model
-    // as required by WUA. CoInitializeEx returns HRESULT directly;
-    // .ok() converts it to Result.
-    unsafe {
-        CoInitializeEx(None, COINIT_APARTMENTTHREADED)
-            .ok()
-            .map_err(|e| WuaError::ComInit(format!("{e}")))?;
-    }
-
-    // Ensure COM is uninitialized when we're done.
+    // Guard that calls CoUninitialize on drop, ensuring COM cleanup
+    // even if the function returns early via `?`.
     struct ComGuard;
     impl Drop for ComGuard {
         fn drop(&mut self) {
@@ -257,6 +254,15 @@ fn wua_search() -> Result<WuaCounts, WuaError> {
                 CoUninitialize();
             }
         }
+    }
+
+    // Initialize COM in the spawned thread with STA apartment model
+    // as required by WUA. CoInitializeEx returns HRESULT directly;
+    // .ok() converts it to Result.
+    unsafe {
+        CoInitializeEx(None, COINIT_APARTMENTTHREADED)
+            .ok()
+            .map_err(|e| WuaError::ComInit(format!("{e}")))?;
     }
     let _guard = ComGuard;
 
