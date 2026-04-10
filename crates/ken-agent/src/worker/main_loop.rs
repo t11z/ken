@@ -15,13 +15,17 @@ use crate::audit::AuditLogger;
 use crate::config::{AgentConfig, DataPaths, EnrolledCredentials};
 use crate::net::client::KenApiClient;
 use crate::observer::snapshot::collect_snapshot;
+use crate::worker::commands;
 
 /// Run the main worker loop until shutdown is signalled.
 ///
 /// # Errors
 ///
 /// Returns an error if the initial configuration or client setup fails.
-pub async fn run(shutdown: Arc<AtomicBool>, paths: &DataPaths) -> Result<(), anyhow::Error> {
+pub async fn run(
+    shutdown: Arc<AtomicBool>,
+    paths: &DataPaths,
+) -> Result<(), anyhow::Error> {
     let config = AgentConfig::load(&paths.config_file)?;
 
     if !config.is_enrolled() {
@@ -34,11 +38,32 @@ pub async fn run(shutdown: Arc<AtomicBool>, paths: &DataPaths) -> Result<(), any
 
     let credentials = EnrolledCredentials::load(paths)?;
     let client = KenApiClient::new(&credentials, &config.server.url);
-    let audit = AuditLogger::open(&paths.audit_log, config.audit.max_log_size_bytes)?;
+    let audit = Arc::new(
+        AuditLogger::open(&paths.audit_log, config.audit.max_log_size_bytes)?,
+    );
 
     audit.log(AuditEventKind::ServiceStarted, "worker loop started");
 
-    let mut heartbeat_interval = Duration::from_secs(u64::from(config.heartbeat.interval_seconds));
+    // Create shared consent state for the pipe server and command
+    // processor to communicate through.
+    let consent_state = commands::new_consent_state();
+
+    // Start the Named Pipe IPC server on Windows.
+    #[cfg(windows)]
+    {
+        let cs = consent_state.clone();
+        let sd = shutdown.clone();
+        let au = audit.clone();
+        let pa = Arc::new(DataPaths::new(
+            &crate::config::data_dir(),
+        ));
+        tokio::task::spawn_blocking(move || {
+            crate::ipc::server::run(cs, sd, au, pa);
+        });
+    }
+
+    let mut heartbeat_interval =
+        Duration::from_secs(u64::from(config.heartbeat.interval_seconds));
 
     while !shutdown.load(Ordering::SeqCst) {
         if crate::killswitch::is_active(&paths.kill_switch_file) {
@@ -60,29 +85,44 @@ pub async fn run(shutdown: Arc<AtomicBool>, paths: &DataPaths) -> Result<(), any
 
         match client.send_heartbeat(&heartbeat).await {
             Ok(ack) => {
-                audit.log(AuditEventKind::HeartbeatSent, "heartbeat acknowledged");
-                heartbeat_interval =
-                    Duration::from_secs(u64::from(ack.next_heartbeat_interval_seconds));
+                audit.log(
+                    AuditEventKind::HeartbeatSent,
+                    "heartbeat acknowledged",
+                );
+                heartbeat_interval = Duration::from_secs(u64::from(
+                    ack.next_heartbeat_interval_seconds,
+                ));
 
                 for command in &ack.pending_commands {
                     audit.log(
                         AuditEventKind::CommandReceived {
                             command_id: command.command_id,
                         },
-                        &format!("received command {}", command.command_id),
+                        &format!(
+                            "received command {}",
+                            command.command_id
+                        ),
                     );
 
-                    let outcome = crate::worker::commands::process(command);
+                    let outcome =
+                        commands::process(command, &consent_state).await;
                     audit.log(
                         AuditEventKind::CommandCompleted {
                             command_id: outcome.command_id,
                             result: outcome.result.clone(),
                         },
-                        &format!("command {} completed", outcome.command_id),
+                        &format!(
+                            "command {} completed",
+                            outcome.command_id
+                        ),
                     );
 
-                    if let Err(e) = client.report_command_outcomes(&[outcome]).await {
-                        tracing::warn!("failed to report outcome: {e}");
+                    if let Err(e) =
+                        client.report_command_outcomes(&[outcome]).await
+                    {
+                        tracing::warn!(
+                            "failed to report outcome: {e}"
+                        );
                     }
                 }
             }
@@ -97,7 +137,7 @@ pub async fn run(shutdown: Arc<AtomicBool>, paths: &DataPaths) -> Result<(), any
             }
         }
 
-        // Sleep with jitter, respecting shutdown
+        // Sleep with jitter, respecting shutdown.
         let jitter_secs = u64::from(config.heartbeat.jitter_seconds);
         let jitter = if jitter_secs > 0 {
             Duration::from_secs(simple_random() % (jitter_secs + 1))
@@ -139,8 +179,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let paths = DataPaths::new(dir.path());
 
-        // Create a minimal config (not enrolled)
-        std::fs::create_dir_all(paths.config_file.parent().unwrap()).unwrap();
+        // Create a minimal config (not enrolled).
+        std::fs::create_dir_all(paths.config_file.parent().unwrap())
+            .unwrap();
         std::fs::write(&paths.config_file, "").unwrap();
 
         let shutdown = Arc::new(AtomicBool::new(false));
