@@ -90,14 +90,17 @@ impl ClientCertVerifier for KenClientCertVerifier {
 
         // Step 4: Check enrollment status in the database.
         // The rustls verifier trait is synchronous; wrap the async storage
-        // call in block_on. This is safe because it runs once per TLS
-        // handshake (not once per request) and at Ken's scale (~10
-        // endpoints) this is negligible.
-        let endpoint = tokio::runtime::Handle::current()
-            .block_on(self.storage.get_endpoint(&endpoint_id))
-            .map_err(|e| {
-                rustls::Error::General(format!("database lookup failed during TLS handshake: {e}"))
-            })?;
+        // call in block_in_place + block_on. block_in_place moves the
+        // current task to a blocking thread so block_on can run without
+        // panicking. This is safe because it runs once per TLS handshake
+        // (not once per request) and at Ken's scale (~10 endpoints) this
+        // is negligible.
+        let endpoint = tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(self.storage.get_endpoint(&endpoint_id))
+        })
+        .map_err(|e| {
+            rustls::Error::General(format!("database lookup failed during TLS handshake: {e}"))
+        })?;
 
         // Step 5: Enrollment checks.
         let endpoint = endpoint.ok_or_else(|| {
@@ -158,6 +161,100 @@ impl ClientCertVerifier for KenClientCertVerifier {
     }
 }
 
+/// Custom acceptor that wraps `RustlsAcceptor`, extracts the verified
+/// peer certificate after the TLS handshake, and attaches the parsed
+/// `EndpointId` to the per-connection service.
+///
+/// The verifier (`KenClientCertVerifier`) has already validated the
+/// certificate chain, enrollment status, and revocation during the
+/// handshake. This acceptor performs no security checks — it only
+/// reads the already-approved peer certificate and routes the
+/// `EndpointId` into the request-handling layer.
+///
+/// See ADR-0008 for the verifier design and ADR-0017 for the bridge
+/// architecture that justifies this separation.
+#[derive(Clone)]
+pub struct KenAcceptor {
+    inner: axum_server::tls_rustls::RustlsAcceptor,
+}
+
+impl KenAcceptor {
+    /// Create a new acceptor from a `RustlsConfig`.
+    pub fn new(config: axum_server::tls_rustls::RustlsConfig) -> Self {
+        Self {
+            inner: axum_server::tls_rustls::RustlsAcceptor::new(config),
+        }
+    }
+}
+
+impl std::fmt::Debug for KenAcceptor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("KenAcceptor").finish()
+    }
+}
+
+impl<S> axum_server::accept::Accept<tokio::net::TcpStream, S> for KenAcceptor
+where
+    S: Send + 'static,
+{
+    type Stream = tokio_rustls::server::TlsStream<tokio::net::TcpStream>;
+    type Service = super::endpoint_id::AddEndpointId<S>;
+    type Future = std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = std::io::Result<(Self::Stream, Self::Service)>> + Send,
+        >,
+    >;
+
+    fn accept(&self, stream: tokio::net::TcpStream, service: S) -> Self::Future {
+        let inner_future =
+            <axum_server::tls_rustls::RustlsAcceptor as axum_server::accept::Accept<
+                tokio::net::TcpStream,
+                S,
+            >>::accept(&self.inner, stream, service);
+
+        Box::pin(async move {
+            let (tls_stream, svc) = inner_future.await?;
+
+            // Extract the peer certificate from the completed TLS connection.
+            // The verifier has already approved this certificate during the
+            // handshake; we are only reading the result, not re-checking it.
+            let (_, server_conn) = tls_stream.get_ref();
+            let certs = server_conn.peer_certificates().ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "no peer certificates after mTLS handshake — verifier should have rejected this",
+                )
+            })?;
+
+            let leaf = certs.first().ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "empty peer certificate chain after mTLS handshake",
+                )
+            })?;
+
+            let cn = extract_cn(leaf).map_err(|e| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("failed to extract CN from verified peer certificate: {e}"),
+                )
+            })?;
+
+            let endpoint_id = EndpointId::parse(&cn).map_err(|e| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("verified peer certificate CN is not a valid EndpointId: {e}"),
+                )
+            })?;
+
+            Ok((
+                tls_stream,
+                super::endpoint_id::AddEndpointId::new(svc, endpoint_id),
+            ))
+        })
+    }
+}
+
 /// Build a `rustls::ServerConfig` for a listener.
 ///
 /// When `client_verifier` is `Some`, the config requires client certificates
@@ -202,7 +299,11 @@ pub fn build_server_tls_config(
 }
 
 /// Extract the Common Name (CN) from a DER-encoded certificate.
-fn extract_cn(cert_der: &CertificateDer<'_>) -> Result<String, String> {
+///
+/// Used by both the `KenClientCertVerifier` (during TLS handshake) and
+/// `KenAcceptor` (after handshake) to parse the CN into the same form,
+/// guaranteeing consistent `EndpointId` parsing across the two pieces.
+pub(crate) fn extract_cn(cert_der: &CertificateDer<'_>) -> Result<String, String> {
     let (_, cert) = x509_parser::parse_x509_certificate(cert_der.as_ref())
         .map_err(|e| format!("failed to parse X.509 certificate: {e}"))?;
 

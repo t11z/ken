@@ -56,6 +56,22 @@ The `ken_client_verifier` is a custom `ClientCertVerifier` implementation that:
 
 The custom verifier is important because `rustls`'s built-in verifier does not know about Ken's database. Every request must pass both the cryptographic check (signature chain) and the enrollment check (is this endpoint still admitted?). An endpoint removed from the database must be immediately unable to connect, even if its certificate is still cryptographically valid.
 
+## Verifier and acceptor: two pieces, one trust path
+
+The work of authenticating an agent and propagating its identity into request handlers is split into two separate pieces. The split exists because the two pieces run in different contexts, have different contracts, and should be changeable independently.
+
+**Why the split:** rustls's `ClientCertVerifier` trait runs synchronously inside the TLS handshake. It is the only place where rustls itself enforces "this connection may proceed." The `KenAcceptor` runs after the handshake, in async tokio code, and is the only place where Ken can extract the already-approved peer certificate and route the resulting `EndpointId` into the application layer. Collapsing the two into one piece would mean either pushing application-layer concerns into the synchronous verifier (which cannot return rich types to the request layer) or weakening the handshake-time enforcement (which would let revoked endpoints establish connections).
+
+**The verifier's contract** (`KenClientCertVerifier` in `crates/ken-server/src/http/tls.rs`): chain validation against the Ken root CA via the built-in `WebPkiClientVerifier`, CN-to-EndpointId parsing, enrollment lookup via `Storage::get_endpoint`, revocation check (`revoked_at`), and certificate expiry check against the database record. If any of these fail, the handshake is rejected and the acceptor never sees the connection. The verifier uses `block_in_place` + `block_on` to call the async storage layer from the synchronous trait method; this is safe at Ken's scale because it runs once per handshake, not once per request.
+
+**The acceptor's contract** (`KenAcceptor` in the same file): extract the leaf certificate from the completed `tokio_rustls::server::TlsStream` via `get_ref().1.peer_certificates()`, parse the CN using the same `extract_cn` helper the verifier uses (so the parsing rules are guaranteed identical), and wrap the per-connection service in `AddEndpointId<S>` which stores the resulting `EndpointId` and injects it into every request's extensions. The acceptor performs no security checks. It is purely a value-routing layer between the completed handshake and the HTTP request.
+
+**The middleware's contract** (`require_endpoint_id` in `crates/ken-server/src/http/endpoint_id.rs`): mounted on the agent router as defense-in-depth. Checks that `Extension<EndpointId>` is present in the request; if absent (which indicates a wiring bug, not an authentication failure), returns 500 Internal Server Error and logs the condition as a server bug. The middleware never parses, never decides, never falls back.
+
+**Why this layering matters:** a future reader who needs to change one of the three pieces can change it without touching the other two, as long as the contracts hold. A future reader who is tempted to "simplify" by collapsing the verifier and the acceptor into one thing should read ADR-0008 and ADR-0017 first and then come back.
+
+See ADR-0008 and ADR-0017 for the architectural justification of this split.
+
 ## rustls client setup (agent)
 
 The agent uses `rustls` as a client:

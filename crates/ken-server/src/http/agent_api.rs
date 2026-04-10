@@ -7,13 +7,14 @@
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::routing::{get, post};
-use axum::{Json, Router};
+use axum::{Extension, Json, Router};
 use serde::Serialize;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
 use ken_protocol::command::CommandOutcome;
 use ken_protocol::heartbeat::{Heartbeat, HeartbeatAck};
+use ken_protocol::ids::EndpointId;
 use ken_protocol::version;
 
 use crate::error::AppError;
@@ -33,15 +34,16 @@ pub fn routes() -> Router<AppState> {
 /// `POST /api/v1/heartbeat` — accepts a `Heartbeat` as JSON, returns
 /// a `HeartbeatAck` with pending commands.
 ///
-/// In a full mTLS deployment, the endpoint ID would be verified against
-/// the client certificate CN. For Phase 1, the endpoint ID from the
-/// heartbeat body is trusted directly (mTLS enforcement is added when
-/// the TLS listener is wired up).
+/// The endpoint identity comes from the mTLS client certificate, bridged
+/// into the request extensions by `KenAcceptor` and the `AddEndpointId`
+/// service wrapper per ADR-0017 and ADR-0016. The handler never reads
+/// identity from the request body.
 async fn heartbeat(
+    Extension(verified_endpoint_id): Extension<EndpointId>,
     State(state): State<AppState>,
     Json(heartbeat): Json<Heartbeat>,
 ) -> Result<Json<HeartbeatAck>, AppError> {
-    let endpoint_id = &heartbeat.endpoint_id;
+    let endpoint_id = &verified_endpoint_id;
 
     // Verify schema version
     if !version::is_compatible(heartbeat.schema_version) {
@@ -119,7 +121,12 @@ async fn heartbeat(
 ///
 /// `POST /api/v1/command_outcomes` — accepts a `Vec<CommandOutcome>`,
 /// returns 204 No Content.
+///
+/// The endpoint identity comes from the mTLS client certificate via
+/// `Extension<EndpointId>` (ADR-0017, ADR-0016). Outcomes are recorded
+/// as belonging to the verified endpoint.
 async fn command_outcomes(
+    Extension(verified_endpoint_id): Extension<EndpointId>,
     State(state): State<AppState>,
     Json(outcomes): Json<Vec<CommandOutcome>>,
 ) -> Result<StatusCode, AppError> {
@@ -135,7 +142,7 @@ async fn command_outcomes(
                 &format!("command_completed_{}", outcome.command_id),
                 &kind_str,
                 "agent",
-                None,
+                Some(&verified_endpoint_id.to_string()),
             )
             .await
             .ok();
