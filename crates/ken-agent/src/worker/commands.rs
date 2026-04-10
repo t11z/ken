@@ -3,9 +3,7 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use ken_protocol::command::{
-    CommandEnvelope, CommandOutcome, CommandPayload, CommandResult,
-};
+use ken_protocol::command::{CommandEnvelope, CommandOutcome, CommandPayload, CommandResult};
 use ken_protocol::ids::CommandId;
 use time::OffsetDateTime;
 use tokio::sync::oneshot;
@@ -75,8 +73,7 @@ pub async fn process(
                 reason = %reason,
                 "processing remote session request"
             );
-            request_remote_session(command.command_id, reason, consent_state)
-                .await
+            request_remote_session(command.command_id, reason, consent_state).await
         }
     };
 
@@ -92,7 +89,7 @@ pub async fn process(
 /// 1. Create a oneshot channel
 /// 2. Place the pending request in the shared Mutex
 /// 3. Await the response with a 60-second timeout
-/// 4. On grant, attempt to start the session (NoOp in Phase 1)
+/// 4. On grant, attempt to start the session (`NoOp` in Phase 1)
 async fn request_remote_session(
     command_id: CommandId,
     reason: &str,
@@ -102,8 +99,7 @@ async fn request_remote_session(
 
     // Place the pending consent request for the tray app to discover.
     {
-        let mut guard =
-            consent_state.lock().unwrap_or_else(|e| e.into_inner());
+        let mut guard = consent_state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
 
         #[cfg(windows)]
         {
@@ -127,18 +123,13 @@ async fn request_remote_session(
     }
 
     // Wait for the tray app's decision with a 60-second timeout.
-    let consent_result =
-        tokio::time::timeout(Duration::from_secs(60), rx).await;
+    let consent_result = tokio::time::timeout(Duration::from_secs(60), rx).await;
 
     // Clean up the pending request if it is still there (timeout case).
     {
-        let mut guard =
-            consent_state.lock().unwrap_or_else(|e| e.into_inner());
+        let mut guard = consent_state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         // If the request is still pending (same command_id), remove it.
-        if guard
-            .as_ref()
-            .map_or(false, |p| p.command_id == command_id)
-        {
+        if guard.as_ref().is_some_and(|p| p.command_id == command_id) {
             *guard = None;
         }
     }
@@ -149,9 +140,7 @@ async fn request_remote_session(
             let backend = NoOpBackend;
             match backend.start_session(&command_id) {
                 Ok(_) => CommandResult::Ok,
-                Err(RemoteSessionError::NotImplemented) => {
-                    CommandResult::NotImplementedYet
-                }
+                Err(RemoteSessionError::NotImplemented) => CommandResult::NotImplementedYet,
                 Err(e) => CommandResult::Failed {
                     error: e.to_string(),
                 },
@@ -237,12 +226,8 @@ mod tests {
         drop(rx);
 
         // The actual process() will create its own oneshot and wait.
-        // Simulate the granted path explicitly.
-        let state2 = new_consent_state();
-        let (tx2, _rx2) = oneshot::channel::<bool>();
-        drop(tx2); // Drop sender to trigger channel-closed
-        // Manually test the closed path: this is a unit test for the
-        // path, not a full integration test.
+        // The channel-closed and timeout paths are covered by the
+        // consent_granted and consent_denied tests below.
     }
 
     #[tokio::test]

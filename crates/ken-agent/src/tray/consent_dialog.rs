@@ -40,11 +40,7 @@ pub struct ConsentDialog {
 impl ConsentDialog {
     /// Create a new consent dialog.
     #[must_use]
-    pub fn new(
-        admin_name: String,
-        session_description: String,
-        command_id: CommandId,
-    ) -> Self {
+    pub fn new(admin_name: String, session_description: String, command_id: CommandId) -> Self {
         Self {
             admin_name,
             session_description,
@@ -87,32 +83,23 @@ impl ConsentDialog {
 
                     if !self.session_description.is_empty() {
                         ui.add_space(5.0);
-                        ui.label(format!(
-                            "Grund: {}",
-                            self.session_description
-                        ));
+                        ui.label(format!("Grund: {}", self.session_description));
                     }
 
                     ui.add_space(10.0);
-                    ui.label(format!(
-                        "Verbleibende Zeit: {remaining} Sekunden"
-                    ));
+                    ui.label(format!("Verbleibende Zeit: {remaining} Sekunden"));
                     ui.add_space(10.0);
 
                     ui.horizontal(|ui| {
                         if ui
-                            .button(
-                                egui::RichText::new("Erlauben").size(14.0),
-                            )
+                            .button(egui::RichText::new("Erlauben").size(14.0))
                             .clicked()
                         {
                             self.outcome = Some(ConsentOutcome::Granted);
                         }
                         ui.add_space(20.0);
                         if ui
-                            .button(
-                                egui::RichText::new("Ablehnen").size(14.0),
-                            )
+                            .button(egui::RichText::new("Ablehnen").size(14.0))
                             .clicked()
                         {
                             self.outcome = Some(ConsentOutcome::Denied);
@@ -134,21 +121,14 @@ mod tests {
 
     #[test]
     fn dialog_initializes_without_outcome() {
-        let dialog = ConsentDialog::new(
-            "Admin".to_string(),
-            "test".to_string(),
-            CommandId::new(),
-        );
+        let dialog = ConsentDialog::new("Admin".to_string(), "test".to_string(), CommandId::new());
         assert!(dialog.outcome.is_none());
     }
 
     #[test]
     fn timeout_produces_timed_out() {
-        let mut dialog = ConsentDialog::new(
-            "Admin".to_string(),
-            "test".to_string(),
-            CommandId::new(),
-        );
+        let mut dialog =
+            ConsentDialog::new("Admin".to_string(), "test".to_string(), CommandId::new());
         dialog.timeout = Duration::from_millis(0);
         dialog.shown_at = Instant::now() - Duration::from_secs(1);
         // Without a UI context we can't call show(), but the timeout

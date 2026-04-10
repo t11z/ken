@@ -45,9 +45,8 @@ pub fn run_tray_app() {
     let _ = menu.append(&item_quit);
 
     // Placeholder 16x16 RGBA icon.
-    let icon =
-        tray_icon::Icon::from_rgba(vec![0x33, 0x66, 0x99, 0xFF; 16 * 16], 16, 16)
-            .expect("valid icon");
+    let icon = tray_icon::Icon::from_rgba(vec![0x33, 0x66, 0x99, 0xFF; 16 * 16], 16, 16)
+        .expect("valid icon");
 
     let _tray = TrayIconBuilder::new()
         .with_menu(Box::new(menu))
@@ -163,14 +162,12 @@ impl eframe::App for TrayApp {
                 match msg {
                     IpcMessage::ConsentRequest(info) => {
                         if self.consent_dialog.is_none() {
-                            self.consent_dialog_active
-                                .store(true, Ordering::SeqCst);
-                            self.consent_dialog =
-                                Some(super::consent_dialog::ConsentDialog::new(
-                                    info.admin_name,
-                                    info.session_description,
-                                    info.command_id,
-                                ));
+                            self.consent_dialog_active.store(true, Ordering::SeqCst);
+                            self.consent_dialog = Some(super::consent_dialog::ConsentDialog::new(
+                                info.admin_name,
+                                info.session_description,
+                                info.command_id,
+                            ));
                         }
                     }
                 }
@@ -180,21 +177,16 @@ impl eframe::App for TrayApp {
         // Show consent dialog if active.
         if let Some(ref mut dialog) = self.consent_dialog {
             if let Some(outcome) = dialog.show(ctx) {
-                let granted = matches!(
-                    outcome,
-                    crate::ipc::ConsentOutcome::Granted
-                );
+                let granted = matches!(outcome, crate::ipc::ConsentOutcome::Granted);
                 let command_id = dialog.command_id;
 
                 // Submit the consent response via IPC.
                 if let Ok(mut client) = IpcClient::connect() {
-                    let _ = client
-                        .submit_consent_response(&command_id, granted);
+                    let _ = client.submit_consent_response(&command_id, granted);
                 }
 
                 self.consent_dialog = None;
-                self.consent_dialog_active
-                    .store(false, Ordering::SeqCst);
+                self.consent_dialog_active.store(false, Ordering::SeqCst);
             }
         }
 
@@ -222,16 +214,14 @@ impl eframe::App for TrayApp {
                                         .and_then(|mut c| c.activate_kill_switch())
                                     {
                                         Ok(()) => {
-                                            self.kill_state =
-                                                KillSwitchState::Confirmed;
+                                            self.kill_state = KillSwitchState::Confirmed;
                                         }
                                         Err(e) => {
                                             // IPC failed — fall back to local activation
                                             let data_dir = crate::config::data_dir();
-                                            let paths =
-                                                crate::config::DataPaths::new(&data_dir);
-                                            let user = std::env::var("USERNAME")
-                                                .unwrap_or_default();
+                                            let paths = crate::config::DataPaths::new(&data_dir);
+                                            let user =
+                                                std::env::var("USERNAME").unwrap_or_default();
                                             if crate::killswitch::activate(
                                                 &paths.kill_switch_file,
                                                 "user requested via tray app (IPC fallback)",
@@ -239,20 +229,16 @@ impl eframe::App for TrayApp {
                                             )
                                             .is_ok()
                                             {
-                                                self.kill_state =
-                                                    KillSwitchState::Confirmed;
+                                                self.kill_state = KillSwitchState::Confirmed;
                                             } else {
                                                 self.kill_state =
-                                                    KillSwitchState::Failed(
-                                                        e.to_string(),
-                                                    );
+                                                    KillSwitchState::Failed(e.to_string());
                                             }
                                         }
                                     }
                                 }
                                 if ui.button("Abbrechen").clicked() {
-                                    self.show_kill_confirm
-                                        .store(false, Ordering::SeqCst);
+                                    self.show_kill_confirm.store(false, Ordering::SeqCst);
                                 }
                             });
                         });
@@ -268,8 +254,7 @@ impl eframe::App for TrayApp {
                             );
                             if ui.button("OK").clicked() {
                                 self.kill_state = KillSwitchState::Idle;
-                                self.show_kill_confirm
-                                    .store(false, Ordering::SeqCst);
+                                self.show_kill_confirm.store(false, Ordering::SeqCst);
                             }
                         });
                 }
@@ -279,9 +264,7 @@ impl eframe::App for TrayApp {
                         .collapsible(false)
                         .resizable(false)
                         .show(ctx, |ui| {
-                            ui.label(format!(
-                                "Kill-Switch konnte nicht aktiviert werden: {msg}"
-                            ));
+                            ui.label(format!("Kill-Switch konnte nicht aktiviert werden: {msg}"));
                             ui.add_space(5.0);
                             ui.label(
                                 "Manuell: Datei 'kill-switch-requested' \
@@ -289,8 +272,7 @@ impl eframe::App for TrayApp {
                             );
                             if ui.button("OK").clicked() {
                                 self.kill_state = KillSwitchState::Idle;
-                                self.show_kill_confirm
-                                    .store(false, Ordering::SeqCst);
+                                self.show_kill_confirm.store(false, Ordering::SeqCst);
                             }
                         });
                 }

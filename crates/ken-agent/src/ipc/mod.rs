@@ -226,10 +226,7 @@ mod tests {
 
     #[test]
     fn response_audit_log_tail_roundtrip() {
-        let resp = IpcResponse::AuditLogTail(vec![
-            "line 1".to_string(),
-            "line 2".to_string(),
-        ]);
+        let resp = IpcResponse::AuditLogTail(vec!["line 1".to_string(), "line 2".to_string()]);
         let json = serde_json::to_string(&resp).unwrap();
         let back: IpcResponse = serde_json::from_str(&json).unwrap();
         assert_eq!(resp, back);

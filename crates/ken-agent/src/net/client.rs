@@ -28,20 +28,14 @@ impl KenApiClient {
     ///
     /// Returns an error if the certificates cannot be parsed or the
     /// reqwest client cannot be built.
-    pub fn new(
-        credentials: &EnrolledCredentials,
-        server_url: &str,
-    ) -> Result<Self, anyhow::Error> {
-        let ca_cert = reqwest::Certificate::from_pem(
-            credentials.ca_certificate_pem.as_bytes(),
-        )
-        .map_err(|e| anyhow::anyhow!("invalid CA certificate: {e}"))?;
+    pub fn new(credentials: &EnrolledCredentials, server_url: &str) -> Result<Self, anyhow::Error> {
+        let ca_cert = reqwest::Certificate::from_pem(credentials.ca_certificate_pem.as_bytes())
+            .map_err(|e| anyhow::anyhow!("invalid CA certificate: {e}"))?;
 
         // reqwest::Identity wants a PEM bundle with cert + key.
         let identity_pem = format!(
             "{}\n{}",
-            credentials.client_certificate_pem,
-            credentials.client_private_key_pem,
+            credentials.client_certificate_pem, credentials.client_private_key_pem,
         );
         let identity = reqwest::Identity::from_pem(identity_pem.as_bytes())
             .map_err(|e| anyhow::anyhow!("invalid client identity: {e}"))?;
@@ -52,10 +46,7 @@ impl KenApiClient {
             .add_root_certificate(ca_cert)
             .identity(identity)
             .timeout(Duration::from_secs(30))
-            .user_agent(format!(
-                "ken-agent/{}",
-                env!("CARGO_PKG_VERSION")
-            ))
+            .user_agent(format!("ken-agent/{}", env!("CARGO_PKG_VERSION")))
             .build()
             .map_err(|e| anyhow::anyhow!("failed to build HTTP client: {e}"))?;
 
@@ -91,9 +82,7 @@ impl KenApiClient {
         let status = response.status();
         if !status.is_success() {
             let body = response.text().await.unwrap_or_default();
-            return Err(anyhow::anyhow!(
-                "heartbeat returned {status}: {body}"
-            ));
+            return Err(anyhow::anyhow!("heartbeat returned {status}: {body}"));
         }
 
         let ack: HeartbeatAck = response
@@ -113,10 +102,7 @@ impl KenApiClient {
         outcomes: &[CommandOutcome],
     ) -> Result<(), anyhow::Error> {
         let url = format!("{}/api/v1/command_outcomes", self.server_url);
-        tracing::debug!(
-            count = outcomes.len(),
-            "reporting command outcomes"
-        );
+        tracing::debug!(count = outcomes.len(), "reporting command outcomes");
 
         let response = self
             .client
@@ -124,9 +110,7 @@ impl KenApiClient {
             .json(outcomes)
             .send()
             .await
-            .map_err(|e| {
-                anyhow::anyhow!("command outcomes request failed: {e}")
-            })?;
+            .map_err(|e| anyhow::anyhow!("command outcomes request failed: {e}"))?;
 
         let status = response.status();
         if !status.is_success() {
@@ -142,9 +126,7 @@ impl KenApiClient {
     /// Retrieve the server's current time.
     ///
     /// GETs `{server_url}/api/v1/time` and parses the RFC 3339 timestamp.
-    pub async fn server_time(
-        &self,
-    ) -> Result<time::OffsetDateTime, anyhow::Error> {
+    pub async fn server_time(&self) -> Result<time::OffsetDateTime, anyhow::Error> {
         let url = format!("{}/api/v1/time", self.server_url);
 
         let response = self
@@ -200,11 +182,7 @@ impl KenApiClient {
     /// Download an update MSI to the specified path.
     ///
     /// GETs the MSI URL and streams the response body to disk.
-    pub async fn download_update(
-        &self,
-        msi_url: &str,
-        dest: &Path,
-    ) -> Result<(), anyhow::Error> {
+    pub async fn download_update(&self, msi_url: &str, dest: &Path) -> Result<(), anyhow::Error> {
         tracing::info!(url = %msi_url, dest = %dest.display(), "downloading update");
 
         let response = self
@@ -216,9 +194,7 @@ impl KenApiClient {
 
         let status = response.status();
         if !status.is_success() {
-            return Err(anyhow::anyhow!(
-                "update download returned {status}"
-            ));
+            return Err(anyhow::anyhow!("update download returned {status}"));
         }
 
         let bytes = response

@@ -9,9 +9,7 @@
 
 use ken_protocol::ids::CommandId;
 
-use crate::ipc::{
-    AgentStatus, IpcRequest, IpcResponse, PendingConsentInfo,
-};
+use crate::ipc::{AgentStatus, IpcRequest, IpcResponse, PendingConsentInfo};
 
 /// Typed client for the Named Pipe IPC channel.
 pub struct IpcClient {
@@ -34,9 +32,7 @@ impl IpcClient {
         use windows::Win32::Storage::FileSystem::{
             CreateFileW, FILE_ATTRIBUTE_NORMAL, FILE_SHARE_NONE, OPEN_EXISTING,
         };
-        use windows::Win32::System::Threading::{
-            GetCurrentProcessId, ProcessIdToSessionId,
-        };
+        use windows::Win32::System::Threading::{GetCurrentProcessId, ProcessIdToSessionId};
 
         // Determine our session ID
         let mut session_id: u32 = 0;
@@ -47,8 +43,7 @@ impl IpcClient {
         }
 
         let name = super::server::pipe_name(session_id);
-        let name_wide: Vec<u16> =
-            name.encode_utf16().chain(std::iter::once(0)).collect();
+        let name_wide: Vec<u16> = name.encode_utf16().chain(std::iter::once(0)).collect();
 
         let handle = unsafe {
             CreateFileW(
@@ -74,9 +69,7 @@ impl IpcClient {
                     // ERROR_ACCESS_DENIED
                     Err(anyhow::anyhow!("wrong user or ACL mismatch"))
                 } else {
-                    Err(anyhow::anyhow!(
-                        "failed to connect to pipe: {e}"
-                    ))
+                    Err(anyhow::anyhow!("failed to connect to pipe: {e}"))
                 }
             }
         }
@@ -87,10 +80,7 @@ impl IpcClient {
     /// # Errors
     ///
     /// Returns an error on I/O failure or JSON parse failure.
-    pub fn send(
-        &mut self,
-        request: &IpcRequest,
-    ) -> Result<IpcResponse, anyhow::Error> {
+    pub fn send(&mut self, request: &IpcRequest) -> Result<IpcResponse, anyhow::Error> {
         write_message(self.pipe, request)?;
         read_message(self.pipe)
     }
@@ -100,18 +90,14 @@ impl IpcClient {
         match self.send(&IpcRequest::GetStatus)? {
             IpcResponse::Status(status) => Ok(status),
             IpcResponse::Error(e) => Err(anyhow::anyhow!("IPC error: {e}")),
-            other => Err(anyhow::anyhow!(
-                "unexpected response: {other:?}"
-            )),
+            other => Err(anyhow::anyhow!("unexpected response: {other:?}")),
         }
     }
 
     /// Check if there is a pending consent request.
     ///
     /// Returns `Some(info)` if a consent request is waiting, `None` otherwise.
-    pub fn get_pending_consent(
-        &mut self,
-    ) -> Result<Option<PendingConsentInfo>, anyhow::Error> {
+    pub fn get_pending_consent(&mut self) -> Result<Option<PendingConsentInfo>, anyhow::Error> {
         match self.send(&IpcRequest::GetPendingConsent)? {
             IpcResponse::ConsentPending {
                 command_id,
@@ -124,9 +110,7 @@ impl IpcClient {
             })),
             IpcResponse::NoPendingConsent => Ok(None),
             IpcResponse::Error(e) => Err(anyhow::anyhow!("IPC error: {e}")),
-            other => Err(anyhow::anyhow!(
-                "unexpected response: {other:?}"
-            )),
+            other => Err(anyhow::anyhow!("unexpected response: {other:?}")),
         }
     }
 
@@ -142,9 +126,7 @@ impl IpcClient {
         })? {
             IpcResponse::ConsentResponseAcknowledged => Ok(()),
             IpcResponse::Error(e) => Err(anyhow::anyhow!("IPC error: {e}")),
-            other => Err(anyhow::anyhow!(
-                "unexpected response: {other:?}"
-            )),
+            other => Err(anyhow::anyhow!("unexpected response: {other:?}")),
         }
     }
 
@@ -153,23 +135,16 @@ impl IpcClient {
         match self.send(&IpcRequest::ActivateKillSwitch)? {
             IpcResponse::KillSwitchActivated => Ok(()),
             IpcResponse::Error(e) => Err(anyhow::anyhow!("IPC error: {e}")),
-            other => Err(anyhow::anyhow!(
-                "unexpected response: {other:?}"
-            )),
+            other => Err(anyhow::anyhow!("unexpected response: {other:?}")),
         }
     }
 
     /// Get the tail of the audit log from the service.
-    pub fn get_audit_log_tail(
-        &mut self,
-        lines: u32,
-    ) -> Result<Vec<String>, anyhow::Error> {
+    pub fn get_audit_log_tail(&mut self, lines: u32) -> Result<Vec<String>, anyhow::Error> {
         match self.send(&IpcRequest::GetAuditLogTail { lines })? {
             IpcResponse::AuditLogTail(entries) => Ok(entries),
             IpcResponse::Error(e) => Err(anyhow::anyhow!("IPC error: {e}")),
-            other => Err(anyhow::anyhow!(
-                "unexpected response: {other:?}"
-            )),
+            other => Err(anyhow::anyhow!("unexpected response: {other:?}")),
         }
     }
 }
@@ -177,8 +152,7 @@ impl IpcClient {
 impl Drop for IpcClient {
     fn drop(&mut self) {
         unsafe {
-            let _ =
-                windows::Win32::Foundation::CloseHandle(self.pipe);
+            let _ = windows::Win32::Foundation::CloseHandle(self.pipe);
         }
     }
 }
@@ -197,30 +171,24 @@ fn write_message(
 
     let mut written: u32 = 0;
     unsafe {
-        WriteFile(pipe, Some(&len), Some(&mut written), None).map_err(
-            |e| anyhow::anyhow!("failed to write length prefix: {e}"),
-        )?;
-        WriteFile(pipe, Some(&body), Some(&mut written), None).map_err(
-            |e| anyhow::anyhow!("failed to write message body: {e}"),
-        )?;
+        WriteFile(pipe, Some(&len), Some(&mut written), None)
+            .map_err(|e| anyhow::anyhow!("failed to write length prefix: {e}"))?;
+        WriteFile(pipe, Some(&body), Some(&mut written), None)
+            .map_err(|e| anyhow::anyhow!("failed to write message body: {e}"))?;
     }
 
     Ok(())
 }
 
 /// Read a length-prefixed JSON message from a pipe handle.
-fn read_message(
-    pipe: windows::Win32::Foundation::HANDLE,
-) -> Result<IpcResponse, anyhow::Error> {
+fn read_message(pipe: windows::Win32::Foundation::HANDLE) -> Result<IpcResponse, anyhow::Error> {
     use windows::Win32::Storage::FileSystem::ReadFile;
 
     let mut len_buf = [0u8; 4];
     let mut bytes_read: u32 = 0;
     unsafe {
         ReadFile(pipe, Some(&mut len_buf), Some(&mut bytes_read), None)
-            .map_err(|e| {
-                anyhow::anyhow!("failed to read length prefix: {e}")
-            })?;
+            .map_err(|e| anyhow::anyhow!("failed to read length prefix: {e}"))?;
     }
     if bytes_read != 4 {
         return Err(anyhow::anyhow!(
@@ -230,9 +198,7 @@ fn read_message(
 
     let msg_len = u32::from_le_bytes(len_buf) as usize;
     if msg_len > 65536 {
-        return Err(anyhow::anyhow!(
-            "message too large: {msg_len} bytes"
-        ));
+        return Err(anyhow::anyhow!("message too large: {msg_len} bytes"));
     }
 
     let mut body = vec![0u8; msg_len];
@@ -246,9 +212,7 @@ fn read_message(
                 Some(&mut chunk_read),
                 None,
             )
-            .map_err(|e| {
-                anyhow::anyhow!("failed to read message body: {e}")
-            })?;
+            .map_err(|e| anyhow::anyhow!("failed to read message body: {e}"))?;
         }
         total_read += chunk_read as usize;
     }

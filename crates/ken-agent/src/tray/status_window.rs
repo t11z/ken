@@ -37,44 +37,36 @@ pub fn show(ctx: &egui::Context, visible: &Arc<AtomicBool>) {
         .resizable(false)
         .show(ctx, |ui| match status {
             Ok(status) => {
-                egui::Grid::new("status_grid")
-                    .striped(true)
-                    .show(ui, |ui| {
-                        ui.label("Service running:");
-                        ui.label(if status.service_running {
-                            "Yes"
-                        } else {
-                            "No"
-                        });
-                        ui.end_row();
+                egui::Grid::new("status_grid").striped(true).show(ui, |ui| {
+                    ui.label("Service running:");
+                    ui.label(if status.service_running { "Yes" } else { "No" });
+                    ui.end_row();
 
-                        ui.label("Enrolled:");
-                        ui.label(if status.enrolled { "Yes" } else { "No" });
-                        ui.end_row();
+                    ui.label("Enrolled:");
+                    ui.label(if status.enrolled { "Yes" } else { "No" });
+                    ui.end_row();
 
-                        ui.label("Endpoint ID:");
-                        ui.label(
-                            status.endpoint_id.as_deref().unwrap_or("-"),
-                        );
-                        ui.end_row();
+                    ui.label("Endpoint ID:");
+                    ui.label(status.endpoint_id.as_deref().unwrap_or("-"));
+                    ui.end_row();
 
-                        ui.label("Last heartbeat:");
-                        ui.label(
-                            status
-                                .last_heartbeat
-                                .map(|t| t.to_string())
-                                .unwrap_or_else(|| "never".to_string()),
-                        );
-                        ui.end_row();
+                    ui.label("Last heartbeat:");
+                    ui.label(
+                        status
+                            .last_heartbeat
+                            .map(|t| t.to_string())
+                            .unwrap_or_else(|| "never".to_string()),
+                    );
+                    ui.end_row();
 
-                        ui.label("Pending commands:");
-                        ui.label(status.pending_commands.to_string());
-                        ui.end_row();
+                    ui.label("Pending commands:");
+                    ui.label(status.pending_commands.to_string());
+                    ui.end_row();
 
-                        ui.label("Agent version:");
-                        ui.label(&status.agent_version);
-                        ui.end_row();
-                    });
+                    ui.label("Agent version:");
+                    ui.label(&status.agent_version);
+                    ui.end_row();
+                });
 
                 ui.add_space(10.0);
                 ui.label(
@@ -105,9 +97,7 @@ fn fetch_status_via_ipc() -> Result<AgentStatus, anyhow::Error> {
 /// Fetch audit log entries from the service via IPC.
 ///
 /// Returns the last `lines` audit log entries as JSON strings.
-pub fn fetch_audit_log_via_ipc(
-    lines: u32,
-) -> Result<Vec<String>, anyhow::Error> {
+pub fn fetch_audit_log_via_ipc(lines: u32) -> Result<Vec<String>, anyhow::Error> {
     let mut client = IpcClient::connect()?;
     client.get_audit_log_tail(lines)
 }

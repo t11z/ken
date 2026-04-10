@@ -59,24 +59,18 @@ pub fn run(
     paths: Arc<crate::config::DataPaths>,
 ) {
     use windows::core::PCWSTR;
-    use windows::Win32::Foundation::{
-        CloseHandle, HANDLE, INVALID_HANDLE_VALUE,
-    };
+    use windows::Win32::Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE};
     use windows::Win32::Security::{
-        GetTokenInformation, InitializeSecurityDescriptor,
-        SetSecurityDescriptorDacl, TokenUser, PSECURITY_DESCRIPTOR,
-        SECURITY_ATTRIBUTES, SECURITY_DESCRIPTOR,
+        GetTokenInformation, InitializeSecurityDescriptor, SetSecurityDescriptorDacl, TokenUser,
+        PSECURITY_DESCRIPTOR, SECURITY_ATTRIBUTES, SECURITY_DESCRIPTOR,
         SECURITY_DESCRIPTOR_REVISION, TOKEN_QUERY, TOKEN_USER,
     };
     use windows::Win32::Storage::FileSystem::{ReadFile, WriteFile};
     use windows::Win32::System::Pipes::{
-        ConnectNamedPipe, CreateNamedPipeW, DisconnectNamedPipe,
-        PIPE_ACCESS_DUPLEX, PIPE_READMODE_MESSAGE, PIPE_TYPE_MESSAGE,
-        PIPE_WAIT,
+        ConnectNamedPipe, CreateNamedPipeW, DisconnectNamedPipe, PIPE_ACCESS_DUPLEX,
+        PIPE_READMODE_MESSAGE, PIPE_TYPE_MESSAGE, PIPE_WAIT,
     };
-    use windows::Win32::System::RemoteDesktop::{
-        WTSGetActiveConsoleSessionId, WTSQueryUserToken,
-    };
+    use windows::Win32::System::RemoteDesktop::{WTSGetActiveConsoleSessionId, WTSQueryUserToken};
 
     let session_id = unsafe { WTSGetActiveConsoleSessionId() };
     if session_id == 0xFFFF_FFFF {
@@ -103,8 +97,7 @@ pub fn run(
         bInheritHandle: false.into(),
     };
 
-    let pipe_name_wide: Vec<u16> =
-        name.encode_utf16().chain(std::iter::once(0)).collect();
+    let pipe_name_wide: Vec<u16> = name.encode_utf16().chain(std::iter::once(0)).collect();
 
     while !shutdown.load(Ordering::SeqCst) {
         let pipe = unsafe {
@@ -135,7 +128,9 @@ pub fn run(
                     error = %e,
                     "ConnectNamedPipe failed"
                 );
-                unsafe { let _ = CloseHandle(pipe); }
+                unsafe {
+                    let _ = CloseHandle(pipe);
+                }
                 continue;
             }
         }
@@ -143,8 +138,7 @@ pub fn run(
         // One request/response exchange per connection per ADR-0010.
         match read_message(pipe) {
             Ok(request) => {
-                let response =
-                    dispatch(&request, &consent_state, &audit, &paths);
+                let response = dispatch(&request, &consent_state, &audit, &paths);
 
                 if let Err(e) = write_message(pipe, &response) {
                     tracing::warn!(error = %e, "failed to write IPC response");
@@ -155,9 +149,7 @@ pub fn run(
                 if matches!(request, IpcRequest::ActivateKillSwitch)
                     && matches!(response, IpcResponse::KillSwitchActivated)
                 {
-                    tracing::info!(
-                        "kill switch activated via IPC, signalling shutdown"
-                    );
+                    tracing::info!("kill switch activated via IPC, signalling shutdown");
                     shutdown.store(true, Ordering::SeqCst);
                 }
             }
@@ -186,16 +178,12 @@ fn dispatch(
 ) -> IpcResponse {
     match request {
         IpcRequest::GetStatus => handle_get_status(paths),
-        IpcRequest::GetPendingConsent => {
-            handle_get_pending_consent(consent_state)
-        }
+        IpcRequest::GetPendingConsent => handle_get_pending_consent(consent_state),
         IpcRequest::SubmitConsentResponse {
             command_id,
             granted,
         } => handle_submit_consent(consent_state, command_id, *granted, audit),
-        IpcRequest::GetAuditLogTail { lines } => {
-            handle_get_audit_tail(audit, *lines)
-        }
+        IpcRequest::GetAuditLogTail { lines } => handle_get_audit_tail(audit, *lines),
         IpcRequest::ActivateKillSwitch => handle_kill_switch(paths, audit),
     }
 }
@@ -216,9 +204,7 @@ fn handle_get_status(paths: &crate::config::DataPaths) -> IpcResponse {
     })
 }
 
-fn handle_get_pending_consent(
-    consent_state: &SharedConsentState,
-) -> IpcResponse {
+fn handle_get_pending_consent(consent_state: &SharedConsentState) -> IpcResponse {
     let guard = consent_state.lock().unwrap_or_else(|e| e.into_inner());
     match &*guard {
         Some(pending) => IpcResponse::ConsentPending {
@@ -264,9 +250,7 @@ fn handle_submit_consent(
             *guard = Some(pending);
             IpcResponse::Error("no matching pending consent request".into())
         }
-        None => {
-            IpcResponse::Error("no matching pending consent request".into())
-        }
+        None => IpcResponse::Error("no matching pending consent request".into()),
     }
 }
 
@@ -281,20 +265,13 @@ fn handle_get_audit_tail(audit: &AuditLogger, lines: u32) -> IpcResponse {
 
 /// Handle kill-switch activation: write state file, disable service,
 /// and respond before signalling shutdown.
-fn handle_kill_switch(
-    paths: &crate::config::DataPaths,
-    audit: &AuditLogger,
-) -> IpcResponse {
+fn handle_kill_switch(paths: &crate::config::DataPaths, audit: &AuditLogger) -> IpcResponse {
     let user = "tray-app-user";
 
-    if let Err(e) = crate::killswitch::activate(
-        &paths.kill_switch_file,
-        "user-triggered via tray app",
-        user,
-    ) {
-        return IpcResponse::Error(format!(
-            "failed to activate kill switch: {e}"
-        ));
+    if let Err(e) =
+        crate::killswitch::activate(&paths.kill_switch_file, "user-triggered via tray app", user)
+    {
+        return IpcResponse::Error(format!("failed to activate kill switch: {e}"));
     }
 
     audit.log(
@@ -313,26 +290,17 @@ fn handle_kill_switch(
 /// Set the Ken Agent service startup type to Disabled per ADR-0012.
 fn disable_service() -> Result<(), anyhow::Error> {
     use windows_service::service::ServiceAccess;
-    use windows_service::service_manager::{
-        ServiceManager, ServiceManagerAccess,
-    };
+    use windows_service::service_manager::{ServiceManager, ServiceManagerAccess};
 
-    let manager = ServiceManager::local_computer(
-        None::<&str>,
-        ServiceManagerAccess::CONNECT,
-    )?;
+    let manager = ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
     let service = manager.open_service(
         crate::service::lifecycle::SERVICE_NAME,
         ServiceAccess::CHANGE_CONFIG,
     )?;
 
     let config = windows_service::service::ServiceInfo {
-        name: std::ffi::OsString::from(
-            crate::service::lifecycle::SERVICE_NAME,
-        ),
-        display_name: std::ffi::OsString::from(
-            crate::service::lifecycle::SERVICE_DISPLAY_NAME,
-        ),
+        name: std::ffi::OsString::from(crate::service::lifecycle::SERVICE_NAME),
+        display_name: std::ffi::OsString::from(crate::service::lifecycle::SERVICE_DISPLAY_NAME),
         service_type: windows_service::service::ServiceType::OWN_PROCESS,
         start_type: windows_service::service::ServiceStartType::Disabled,
         error_control: windows_service::service::ServiceErrorControl::Normal,
@@ -373,21 +341,17 @@ impl SecurityDescriptorHolder {
 
 /// Build a `SECURITY_DESCRIPTOR` granting the session user
 /// `GENERIC_READ | GENERIC_WRITE` and SYSTEM full control.
-fn build_security_descriptor(
-    session_id: u32,
-) -> Result<SecurityDescriptorHolder, anyhow::Error> {
+fn build_security_descriptor(session_id: u32) -> Result<SecurityDescriptorHolder, anyhow::Error> {
     use windows::Win32::Foundation::{CloseHandle, PSID};
-    use windows::Win32::Security::{
-        AllocateAndInitializeSid, CopySid, FreeSid, GetLengthSid,
-        GetTokenInformation, InitializeSecurityDescriptor,
-        SetSecurityDescriptorDacl, TokenUser, PSECURITY_DESCRIPTOR,
-        SECURITY_DESCRIPTOR_REVISION, TOKEN_QUERY, TOKEN_USER,
-        SID_IDENTIFIER_AUTHORITY,
-    };
     use windows::Win32::Security::Authorization::{
-        SetEntriesInAclW, EXPLICIT_ACCESS_W, NO_MULTIPLE_TRUSTEE,
-        SET_ACCESS, SUB_CONTAINERS_AND_OBJECTS_INHERIT, TRUSTEE_IS_SID,
-        TRUSTEE_IS_USER, TRUSTEE_IS_WELL_KNOWN_GROUP, TRUSTEE_W,
+        SetEntriesInAclW, EXPLICIT_ACCESS_W, NO_MULTIPLE_TRUSTEE, SET_ACCESS,
+        SUB_CONTAINERS_AND_OBJECTS_INHERIT, TRUSTEE_IS_SID, TRUSTEE_IS_USER,
+        TRUSTEE_IS_WELL_KNOWN_GROUP, TRUSTEE_W,
+    };
+    use windows::Win32::Security::{
+        AllocateAndInitializeSid, CopySid, FreeSid, GetLengthSid, GetTokenInformation,
+        InitializeSecurityDescriptor, SetSecurityDescriptorDacl, TokenUser, PSECURITY_DESCRIPTOR,
+        SECURITY_DESCRIPTOR_REVISION, SID_IDENTIFIER_AUTHORITY, TOKEN_QUERY, TOKEN_USER,
     };
     use windows::Win32::System::RemoteDesktop::WTSQueryUserToken;
 
@@ -436,18 +400,23 @@ fn build_security_descriptor(
             &nt_authority,
             1,
             18, // SECURITY_LOCAL_SYSTEM_RID
-            0, 0, 0, 0, 0, 0, 0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
             &mut sid,
         )
         .map_err(|e| anyhow::anyhow!("AllocateAndInitializeSid failed: {e}"))?;
 
         let sid_len = GetLengthSid(sid) as usize;
         let mut sid_copy = vec![0u8; sid_len];
-        CopySid(sid_len as u32, PSID(sid_copy.as_mut_ptr().cast()), sid)
-            .map_err(|e| {
-                FreeSid(sid);
-                anyhow::anyhow!("CopySid for SYSTEM SID failed: {e}")
-            })?;
+        CopySid(sid_len as u32, PSID(sid_copy.as_mut_ptr().cast()), sid).map_err(|e| {
+            FreeSid(sid);
+            anyhow::anyhow!("CopySid for SYSTEM SID failed: {e}")
+        })?;
         FreeSid(sid);
         sid_copy
     };
@@ -461,9 +430,7 @@ fn build_security_descriptor(
             Trustee: TRUSTEE_W {
                 TrusteeForm: TRUSTEE_IS_SID,
                 TrusteeType: TRUSTEE_IS_USER,
-                ptstrName: windows::core::PWSTR(
-                    user_sid_buffer.as_ptr() as *mut u16,
-                ),
+                ptstrName: windows::core::PWSTR(user_sid_buffer.as_ptr() as *mut u16),
                 pMultipleTrustee: std::ptr::null_mut(),
                 MultipleTrusteeOperation: NO_MULTIPLE_TRUSTEE,
             },
@@ -475,9 +442,7 @@ fn build_security_descriptor(
             Trustee: TRUSTEE_W {
                 TrusteeForm: TRUSTEE_IS_SID,
                 TrusteeType: TRUSTEE_IS_WELL_KNOWN_GROUP,
-                ptstrName: windows::core::PWSTR(
-                    system_sid_buffer.as_ptr() as *mut u16,
-                ),
+                ptstrName: windows::core::PWSTR(system_sid_buffer.as_ptr() as *mut u16),
                 pMultipleTrustee: std::ptr::null_mut(),
                 MultipleTrusteeOperation: NO_MULTIPLE_TRUSTEE,
             },
@@ -488,26 +453,16 @@ fn build_security_descriptor(
     unsafe {
         let result = SetEntriesInAclW(Some(&entries), None, &mut acl_ptr);
         if result.is_err() {
-            return Err(anyhow::anyhow!(
-                "SetEntriesInAclW failed: {result:?}"
-            ));
+            return Err(anyhow::anyhow!("SetEntriesInAclW failed: {result:?}"));
         }
     }
 
     // Copy the ACL into an owned buffer so we can free the system allocation.
     let acl_buffer = unsafe {
-        let acl_size =
-            (*(acl_ptr.cast::<windows::Win32::Security::ACL>())).AclSize
-                as usize;
+        let acl_size = (*(acl_ptr.cast::<windows::Win32::Security::ACL>())).AclSize as usize;
         let mut buf = vec![0u8; acl_size];
-        std::ptr::copy_nonoverlapping(
-            acl_ptr.cast::<u8>(),
-            buf.as_mut_ptr(),
-            acl_size,
-        );
-        windows::Win32::Foundation::LocalFree(
-            windows::Win32::Foundation::HLOCAL(acl_ptr),
-        );
+        std::ptr::copy_nonoverlapping(acl_ptr.cast::<u8>(), buf.as_mut_ptr(), acl_size);
+        windows::Win32::Foundation::LocalFree(windows::Win32::Foundation::HLOCAL(acl_ptr));
         buf
     };
 
@@ -517,13 +472,8 @@ fn build_security_descriptor(
     let sd_ptr = sd_buffer.as_mut_ptr().cast::<std::ffi::c_void>();
 
     unsafe {
-        InitializeSecurityDescriptor(
-            PSECURITY_DESCRIPTOR(sd_ptr),
-            SECURITY_DESCRIPTOR_REVISION,
-        )
-        .map_err(|e| {
-            anyhow::anyhow!("InitializeSecurityDescriptor failed: {e}")
-        })?;
+        InitializeSecurityDescriptor(PSECURITY_DESCRIPTOR(sd_ptr), SECURITY_DESCRIPTOR_REVISION)
+            .map_err(|e| anyhow::anyhow!("InitializeSecurityDescriptor failed: {e}"))?;
 
         SetSecurityDescriptorDacl(
             PSECURITY_DESCRIPTOR(sd_ptr),
@@ -531,9 +481,7 @@ fn build_security_descriptor(
             Some(acl_buffer.as_ptr().cast()),
             false,
         )
-        .map_err(|e| {
-            anyhow::anyhow!("SetSecurityDescriptorDacl failed: {e}")
-        })?;
+        .map_err(|e| anyhow::anyhow!("SetSecurityDescriptorDacl failed: {e}"))?;
     }
 
     Ok(SecurityDescriptorHolder {
@@ -548,9 +496,7 @@ fn build_security_descriptor(
 // --------------- wire format helpers ---------------
 
 /// Read a length-prefixed JSON message from a pipe handle.
-fn read_message(
-    pipe: windows::Win32::Foundation::HANDLE,
-) -> Result<IpcRequest, anyhow::Error> {
+fn read_message(pipe: windows::Win32::Foundation::HANDLE) -> Result<IpcRequest, anyhow::Error> {
     use windows::Win32::Storage::FileSystem::ReadFile;
 
     // 4-byte little-endian length prefix
@@ -558,9 +504,7 @@ fn read_message(
     let mut bytes_read: u32 = 0;
     unsafe {
         ReadFile(pipe, Some(&mut len_buf), Some(&mut bytes_read), None)
-            .map_err(|e| {
-                anyhow::anyhow!("failed to read length prefix: {e}")
-            })?;
+            .map_err(|e| anyhow::anyhow!("failed to read length prefix: {e}"))?;
     }
     if bytes_read != 4 {
         return Err(anyhow::anyhow!(
@@ -570,9 +514,7 @@ fn read_message(
 
     let msg_len = u32::from_le_bytes(len_buf) as usize;
     if msg_len > 65536 {
-        return Err(anyhow::anyhow!(
-            "message too large: {msg_len} bytes"
-        ));
+        return Err(anyhow::anyhow!("message too large: {msg_len} bytes"));
     }
 
     let mut body = vec![0u8; msg_len];
@@ -586,9 +528,7 @@ fn read_message(
                 Some(&mut chunk_read),
                 None,
             )
-            .map_err(|e| {
-                anyhow::anyhow!("failed to read message body: {e}")
-            })?;
+            .map_err(|e| anyhow::anyhow!("failed to read message body: {e}"))?;
         }
         total_read += chunk_read as usize;
     }
@@ -609,12 +549,10 @@ fn write_message(
 
     let mut written: u32 = 0;
     unsafe {
-        WriteFile(pipe, Some(&len), Some(&mut written), None).map_err(
-            |e| anyhow::anyhow!("failed to write length prefix: {e}"),
-        )?;
-        WriteFile(pipe, Some(&body), Some(&mut written), None).map_err(
-            |e| anyhow::anyhow!("failed to write message body: {e}"),
-        )?;
+        WriteFile(pipe, Some(&len), Some(&mut written), None)
+            .map_err(|e| anyhow::anyhow!("failed to write length prefix: {e}"))?;
+        WriteFile(pipe, Some(&body), Some(&mut written), None)
+            .map_err(|e| anyhow::anyhow!("failed to write message body: {e}"))?;
     }
 
     Ok(())
