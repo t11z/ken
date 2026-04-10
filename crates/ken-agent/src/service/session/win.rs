@@ -4,18 +4,15 @@
 //! `CreateEnvironmentBlock`, and `CreateProcessAsUser` to launch
 //! `ken-agent.exe tray` in interactive user sessions.
 
-#![cfg(windows)]
-
 use std::sync::Arc;
 
 use ken_protocol::audit::{AuditEventKind, TrayLaunchTrigger, TrayTerminationReason};
-use tracing;
 
 use crate::audit::AuditLogger;
 use crate::service::session::{TrayProcessInfo, TrayProcessMap};
 
 use windows::core::PWSTR;
-use windows::Win32::Foundation::{CloseHandle, HANDLE, WAIT_OBJECT_0, WAIT_TIMEOUT};
+use windows::Win32::Foundation::{CloseHandle, HANDLE, WAIT_OBJECT_0};
 use windows::Win32::Security::{
     DuplicateTokenEx, SecurityImpersonation, TokenPrimary, TOKEN_ALL_ACCESS,
 };
