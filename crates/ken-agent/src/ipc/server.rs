@@ -59,18 +59,13 @@ pub fn run(
     paths: Arc<crate::config::DataPaths>,
 ) {
     use windows::core::PCWSTR;
-    use windows::Win32::Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE};
-    use windows::Win32::Security::{
-        GetTokenInformation, InitializeSecurityDescriptor, SetSecurityDescriptorDacl, TokenUser,
-        PSECURITY_DESCRIPTOR, SECURITY_ATTRIBUTES, SECURITY_DESCRIPTOR,
-        SECURITY_DESCRIPTOR_REVISION, TOKEN_QUERY, TOKEN_USER,
-    };
-    use windows::Win32::Storage::FileSystem::{ReadFile, WriteFile};
+    use windows::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+    use windows::Win32::Security::SECURITY_ATTRIBUTES;
     use windows::Win32::System::Pipes::{
         ConnectNamedPipe, CreateNamedPipeW, DisconnectNamedPipe, PIPE_ACCESS_DUPLEX,
         PIPE_READMODE_MESSAGE, PIPE_TYPE_MESSAGE, PIPE_WAIT,
     };
-    use windows::Win32::System::RemoteDesktop::{WTSGetActiveConsoleSessionId, WTSQueryUserToken};
+    use windows::Win32::System::RemoteDesktop::WTSGetActiveConsoleSessionId;
 
     let session_id = unsafe { WTSGetActiveConsoleSessionId() };
     if session_id == 0xFFFF_FFFF {
@@ -92,7 +87,8 @@ pub fn run(
     };
 
     let sa = SECURITY_ATTRIBUTES {
-        nLength: std::mem::size_of::<SECURITY_ATTRIBUTES>() as u32,
+        nLength: u32::try_from(std::mem::size_of::<SECURITY_ATTRIBUTES>())
+            .expect("SECURITY_ATTRIBUTES size fits u32"),
         lpSecurityDescriptor: sd_holder.as_ptr(),
         bInheritHandle: false.into(),
     };
@@ -255,7 +251,7 @@ fn handle_submit_consent(
 }
 
 fn handle_get_audit_tail(audit: &AuditLogger, lines: u32) -> IpcResponse {
-    let events = audit.recent(lines as usize);
+    let events = audit.recent(usize::from(lines));
     let strings: Vec<String> = events
         .iter()
         .filter_map(|e| serde_json::to_string(e).ok())
@@ -341,6 +337,7 @@ impl SecurityDescriptorHolder {
 
 /// Build a `SECURITY_DESCRIPTOR` granting the session user
 /// `GENERIC_READ | GENERIC_WRITE` and SYSTEM full control.
+#[allow(clippy::too_many_lines)] // Complex Windows security setup; splitting further reduces clarity
 fn build_security_descriptor(session_id: u32) -> Result<SecurityDescriptorHolder, anyhow::Error> {
     use windows::Win32::Foundation::{CloseHandle, PSID};
     use windows::Win32::Security::Authorization::{
@@ -351,7 +348,7 @@ fn build_security_descriptor(session_id: u32) -> Result<SecurityDescriptorHolder
     use windows::Win32::Security::{
         AllocateAndInitializeSid, CopySid, FreeSid, GetLengthSid, GetTokenInformation,
         InitializeSecurityDescriptor, SetSecurityDescriptorDacl, TokenUser, PSECURITY_DESCRIPTOR,
-        SECURITY_DESCRIPTOR_REVISION, SID_IDENTIFIER_AUTHORITY, TOKEN_QUERY, TOKEN_USER,
+        SECURITY_DESCRIPTOR_REVISION, SID_IDENTIFIER_AUTHORITY, TOKEN_USER,
     };
     use windows::Win32::System::RemoteDesktop::WTSQueryUserToken;
 
@@ -366,7 +363,7 @@ fn build_security_descriptor(session_id: u32) -> Result<SecurityDescriptorHolder
         let mut needed: u32 = 0;
         let _ = GetTokenInformation(user_token, TokenUser, None, 0, &mut needed);
 
-        let mut buf = vec![0u8; needed as usize];
+        let mut buf = vec![0u8; usize::from(needed)];
         GetTokenInformation(
             user_token,
             TokenUser,
@@ -383,9 +380,10 @@ fn build_security_descriptor(session_id: u32) -> Result<SecurityDescriptorHolder
 
         let token_user = &*(buf.as_ptr().cast::<TOKEN_USER>());
         let sid = token_user.User.Sid;
-        let sid_len = GetLengthSid(sid) as usize;
-        let mut sid_copy = vec![0u8; sid_len];
-        CopySid(sid_len as u32, PSID(sid_copy.as_mut_ptr().cast()), sid)
+        // GetLengthSid returns u32; keep as u32 to pass directly to CopySid
+        let sid_len = GetLengthSid(sid);
+        let mut sid_copy = vec![0u8; usize::from(sid_len)];
+        CopySid(sid_len, PSID(sid_copy.as_mut_ptr().cast()), sid)
             .map_err(|e| anyhow::anyhow!("CopySid failed: {e}"))?;
         sid_copy
     };
@@ -411,9 +409,10 @@ fn build_security_descriptor(session_id: u32) -> Result<SecurityDescriptorHolder
         )
         .map_err(|e| anyhow::anyhow!("AllocateAndInitializeSid failed: {e}"))?;
 
-        let sid_len = GetLengthSid(sid) as usize;
-        let mut sid_copy = vec![0u8; sid_len];
-        CopySid(sid_len as u32, PSID(sid_copy.as_mut_ptr().cast()), sid).map_err(|e| {
+        // GetLengthSid returns u32; keep as u32 to pass directly to CopySid
+        let sid_len = GetLengthSid(sid);
+        let mut sid_copy = vec![0u8; usize::from(sid_len)];
+        CopySid(sid_len, PSID(sid_copy.as_mut_ptr().cast()), sid).map_err(|e| {
             FreeSid(sid);
             anyhow::anyhow!("CopySid for SYSTEM SID failed: {e}")
         })?;
@@ -459,10 +458,12 @@ fn build_security_descriptor(session_id: u32) -> Result<SecurityDescriptorHolder
 
     // Copy the ACL into an owned buffer so we can free the system allocation.
     let acl_buffer = unsafe {
-        let acl_size = (*(acl_ptr.cast::<windows::Win32::Security::ACL>())).AclSize as usize;
+        let acl_size = usize::from((*(acl_ptr.cast::<windows::Win32::Security::ACL>())).AclSize);
         let mut buf = vec![0u8; acl_size];
         std::ptr::copy_nonoverlapping(acl_ptr.cast::<u8>(), buf.as_mut_ptr(), acl_size);
-        windows::Win32::Foundation::LocalFree(windows::Win32::Foundation::HLOCAL(acl_ptr));
+        windows::Win32::Foundation::LocalFree(windows::Win32::Foundation::HLOCAL(
+            acl_ptr.cast::<std::ffi::c_void>(),
+        ));
         buf
     };
 
@@ -512,7 +513,7 @@ fn read_message(pipe: windows::Win32::Foundation::HANDLE) -> Result<IpcRequest, 
         ));
     }
 
-    let msg_len = u32::from_le_bytes(len_buf) as usize;
+    let msg_len = usize::from(u32::from_le_bytes(len_buf));
     if msg_len > 65536 {
         return Err(anyhow::anyhow!("message too large: {msg_len} bytes"));
     }
@@ -530,7 +531,7 @@ fn read_message(pipe: windows::Win32::Foundation::HANDLE) -> Result<IpcRequest, 
             )
             .map_err(|e| anyhow::anyhow!("failed to read message body: {e}"))?;
         }
-        total_read += chunk_read as usize;
+        total_read += usize::from(chunk_read);
     }
 
     let request: IpcRequest = serde_json::from_slice(&body)?;
@@ -545,7 +546,9 @@ fn write_message(
     use windows::Win32::Storage::FileSystem::WriteFile;
 
     let body = serde_json::to_vec(response)?;
-    let len = (body.len() as u32).to_le_bytes();
+    let len = u32::try_from(body.len())
+        .expect("message body fits in u32")
+        .to_le_bytes();
 
     let mut written: u32 = 0;
     unsafe {
