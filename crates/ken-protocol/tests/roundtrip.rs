@@ -6,7 +6,7 @@
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-use ken_protocol::audit::{AuditEvent, AuditEventKind};
+use ken_protocol::audit::{AuditEvent, AuditEventKind, TrayLaunchTrigger, TrayTerminationReason};
 use ken_protocol::command::{CommandEnvelope, CommandOutcome, CommandPayload, CommandResult};
 use ken_protocol::enrollment::{EnrollmentRequest, EnrollmentResponse};
 use ken_protocol::heartbeat::{Heartbeat, HeartbeatAck};
@@ -519,11 +519,115 @@ fn audit_event_kind_all_variants() {
         AuditEventKind::UpdateInstalled {
             version: "0.2.0".to_string(),
         },
+        AuditEventKind::TrayLaunched {
+            session_id: 1,
+            trigger: TrayLaunchTrigger::SessionLogon,
+        },
+        AuditEventKind::TrayLaunchFailed {
+            session_id: 2,
+            error: "WTSQueryUserToken failed: access denied".to_string(),
+        },
+        AuditEventKind::TrayTerminated {
+            session_id: 1,
+            reason: TrayTerminationReason::SessionLogoff,
+        },
         AuditEventKind::Error {
             context: "heartbeat failed".to_string(),
         },
     ];
     for kind in variants {
         assert_eq!(kind, roundtrip(&kind));
+    }
+}
+
+#[test]
+fn tray_launched_startup_roundtrip() {
+    let kind = AuditEventKind::TrayLaunched {
+        session_id: 1,
+        trigger: TrayLaunchTrigger::Startup,
+    };
+    let event = AuditEvent {
+        event_id: Uuid::new_v4(),
+        occurred_at: now(),
+        kind,
+        message: "tray app launched in session 1 at service startup".to_string(),
+    };
+    assert_eq!(event, roundtrip(&event));
+}
+
+#[test]
+fn tray_launched_session_logon_roundtrip() {
+    let kind = AuditEventKind::TrayLaunched {
+        session_id: 3,
+        trigger: TrayLaunchTrigger::SessionLogon,
+    };
+    let event = AuditEvent {
+        event_id: Uuid::new_v4(),
+        occurred_at: now(),
+        kind,
+        message: "tray app launched in session 3 on logon".to_string(),
+    };
+    assert_eq!(event, roundtrip(&event));
+}
+
+#[test]
+fn tray_launch_failed_roundtrip() {
+    let kind = AuditEventKind::TrayLaunchFailed {
+        session_id: 2,
+        error: "CreateProcessAsUser failed: 0x80070005".to_string(),
+    };
+    let event = AuditEvent {
+        event_id: Uuid::new_v4(),
+        occurred_at: now(),
+        kind,
+        message: "failed to launch tray app in session 2".to_string(),
+    };
+    assert_eq!(event, roundtrip(&event));
+}
+
+#[test]
+fn tray_terminated_logoff_roundtrip() {
+    let kind = AuditEventKind::TrayTerminated {
+        session_id: 1,
+        reason: TrayTerminationReason::SessionLogoff,
+    };
+    let event = AuditEvent {
+        event_id: Uuid::new_v4(),
+        occurred_at: now(),
+        kind,
+        message: "tray app terminated on session logoff".to_string(),
+    };
+    assert_eq!(event, roundtrip(&event));
+}
+
+#[test]
+fn tray_terminated_service_shutdown_roundtrip() {
+    let kind = AuditEventKind::TrayTerminated {
+        session_id: 1,
+        reason: TrayTerminationReason::ServiceShutdown,
+    };
+    let event = AuditEvent {
+        event_id: Uuid::new_v4(),
+        occurred_at: now(),
+        kind,
+        message: "tray app terminated on service shutdown".to_string(),
+    };
+    assert_eq!(event, roundtrip(&event));
+}
+
+#[test]
+fn tray_launch_trigger_all_variants() {
+    for trigger in [TrayLaunchTrigger::Startup, TrayLaunchTrigger::SessionLogon] {
+        assert_eq!(trigger, roundtrip(&trigger));
+    }
+}
+
+#[test]
+fn tray_termination_reason_all_variants() {
+    for reason in [
+        TrayTerminationReason::SessionLogoff,
+        TrayTerminationReason::ServiceShutdown,
+    ] {
+        assert_eq!(reason, roundtrip(&reason));
     }
 }

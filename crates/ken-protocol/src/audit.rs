@@ -86,9 +86,60 @@ pub enum AuditEventKind {
         version: String,
     },
 
+    /// The service launched a tray app in an interactive session.
+    TrayLaunched {
+        /// The Windows session ID where the tray app was launched.
+        session_id: u32,
+        /// What triggered the launch.
+        trigger: TrayLaunchTrigger,
+    },
+
+    /// The service failed to launch a tray app in an interactive session.
+    TrayLaunchFailed {
+        /// The Windows session ID where the launch was attempted.
+        session_id: u32,
+        /// The OS or application error that caused the failure.
+        error: String,
+    },
+
+    /// The service terminated a tray app process.
+    TrayTerminated {
+        /// The Windows session ID whose tray app was terminated.
+        session_id: u32,
+        /// Why the tray app was terminated.
+        reason: TrayTerminationReason,
+    },
+
     /// An error occurred during agent operation.
     Error {
         /// What the agent was doing when the error occurred.
         context: String,
     },
+}
+
+/// What triggered a tray app launch.
+///
+/// Used as a structured field in `AuditEventKind::TrayLaunched` to
+/// distinguish between the startup-time enumeration and a live
+/// session-change event.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TrayLaunchTrigger {
+    /// The service found an existing interactive session at startup.
+    Startup,
+    /// The service reacted to a `WTS_SESSION_LOGON` event.
+    SessionLogon,
+}
+
+/// Why the service terminated a tray app process.
+///
+/// Used as a structured field in `AuditEventKind::TrayTerminated` to
+/// distinguish between logoff-driven and shutdown-driven termination.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TrayTerminationReason {
+    /// The user logged off (`WTS_SESSION_LOGOFF`).
+    SessionLogoff,
+    /// The service is shutting down.
+    ServiceShutdown,
 }
