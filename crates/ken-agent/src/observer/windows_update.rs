@@ -66,8 +66,9 @@ impl WindowsUpdateObserver {
             });
         }
 
-        // Suppress unused variable warning on non-Windows.
-        let _ = &cache_tx;
+        // On non-Windows, drop the sender so the channel is inert.
+        #[cfg(not(windows))]
+        drop(cache_tx);
 
         Self {
             cache_rx,
