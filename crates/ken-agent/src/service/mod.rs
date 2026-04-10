@@ -8,3 +8,4 @@
 //! crate to compile and tests to run.
 
 pub mod lifecycle;
+pub mod session;

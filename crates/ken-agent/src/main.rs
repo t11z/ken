@@ -44,12 +44,9 @@ fn main() {
             }
         }
         Action::RunService => {
-            // On Windows, this would call windows_service::service_dispatcher.
-            // On other platforms, run the service loop directly for development.
             #[cfg(windows)]
             {
-                eprintln!("Windows service dispatch not yet implemented");
-                std::process::exit(1);
+                service::lifecycle::run_service_dispatcher();
             }
             #[cfg(not(windows))]
             {
