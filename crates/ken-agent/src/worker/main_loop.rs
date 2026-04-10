@@ -37,7 +37,7 @@ pub async fn run(
     }
 
     let credentials = EnrolledCredentials::load(paths)?;
-    let client = KenApiClient::new(&credentials, &config.server.url);
+    let client = KenApiClient::new(&credentials, &config.server.url)?;
     let audit = Arc::new(
         AuditLogger::open(&paths.audit_log, config.audit.max_log_size_bytes)?,
     );
