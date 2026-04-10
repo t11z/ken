@@ -22,3 +22,7 @@ Desktop.ini
 # Backup files
 *.bak
 *.orig
+
+# llm-context-collector exclusions
+context-*.md
+context.md
