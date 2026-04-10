@@ -14,6 +14,9 @@ use ken_protocol::status::{
 };
 use time::OffsetDateTime;
 
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
+
 use super::trait_def::Observer;
 use super::{
     BitLockerObserver, DefenderObserver, EventLogObserver, FirewallObserver,
@@ -44,14 +47,15 @@ pub struct ObserverSet {
 
 impl ObserverSet {
     /// Create a new observer set with default observers and the given
-    /// per-observer time budget.
+    /// per-observer time budget. The `shutdown` signal is passed to the
+    /// Windows Update observer's background task (ADR-0020).
     #[must_use]
-    pub fn new(budget: Duration) -> Self {
+    pub fn new(budget: Duration, shutdown: Arc<AtomicBool>) -> Self {
         Self {
             defender: Some(DefenderObserver::new()),
             firewall: Some(FirewallObserver::new()),
             bitlocker: Some(BitLockerObserver::new()),
-            windows_update: Some(WindowsUpdateObserver::new()),
+            windows_update: Some(WindowsUpdateObserver::new(shutdown)),
             event_log: Some(EventLogObserver::new()),
             last_defender: unobserved_defender(),
             last_firewall: unobserved_firewall(),
@@ -228,7 +232,8 @@ mod tests {
 
     #[tokio::test]
     async fn snapshot_collects_without_panic() {
-        let mut set = ObserverSet::new(Duration::from_millis(500));
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let mut set = ObserverSet::new(Duration::from_millis(500), shutdown);
         let snapshot = set.collect_snapshot().await;
         // On non-Windows, all observers return Unobserved
         assert_eq!(snapshot.recent_security_events, Observation::Unobserved);

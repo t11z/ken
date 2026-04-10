@@ -62,8 +62,10 @@ pub async fn run(shutdown: Arc<AtomicBool>, paths: &DataPaths) -> Result<(), any
 
     // Create the observer set per ADR-0018. Each observer is a struct
     // that owns its state. The set is held across heartbeat ticks.
+    // The shutdown signal is passed to the Windows Update observer's
+    // background task (ADR-0020).
     let budget = Duration::from_millis(config.observer.per_observer_budget_ms);
-    let mut observers = ObserverSet::new(budget);
+    let mut observers = ObserverSet::new(budget, shutdown.clone());
 
     let mut heartbeat_interval = Duration::from_secs(u64::from(config.heartbeat.interval_seconds));
 
