@@ -25,6 +25,39 @@ pub struct AgentConfig {
     /// Audit log settings.
     #[serde(default)]
     pub audit: AuditConfig,
+
+    /// Observer execution settings.
+    #[serde(default)]
+    pub observer: ObserverConfig,
+}
+
+/// Observer execution configuration per ADR-0018.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ObserverConfig {
+    /// Per-observer time budget in milliseconds for each `spawn_blocking`
+    /// call during the heartbeat tick. If an observer does not return
+    /// within this budget, the worker proceeds with the observer's last
+    /// cached value. Per ADR-0018, this is a conservative default for
+    /// cheap observers (sub-second). Expensive observers like the WUA
+    /// background task (ADR-0020) have their own internal time guard.
+    #[serde(default = "default_observer_budget_ms")]
+    pub per_observer_budget_ms: u64,
+}
+
+impl Default for ObserverConfig {
+    fn default() -> Self {
+        Self {
+            per_observer_budget_ms: default_observer_budget_ms(),
+        }
+    }
+}
+
+fn default_observer_budget_ms() -> u64 {
+    // 500ms: conservative for cheap observers (Defender WMI ~200ms,
+    // Firewall WMI ~100ms, BitLocker WMI ~100ms, registry reads <10ms).
+    // The WUA observer never blocks the tick path, so this budget does
+    // not apply to the WUA COM call itself.
+    500
 }
 
 /// Server connection configuration.

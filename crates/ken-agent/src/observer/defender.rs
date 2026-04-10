@@ -5,28 +5,46 @@
 
 use ken_protocol::status::{DefenderStatus, Observation};
 
-/// Collect Defender status from WMI.
+use super::trait_def::Observer;
+
+/// Defender observer struct per ADR-0018.
 ///
-/// Returns a `DefenderStatus` with all fields `Unobserved` until the
-/// WMI query is implemented. Per ADR-0019, subsystem-level `Option`
-/// wrappers are removed; individual fields carry observation state.
-pub fn collect() -> DefenderStatus {
-    #[cfg(windows)]
-    {
-        // WMI query via the `wmi` crate would go here.
-        // For Phase 1, this is a placeholder that returns Unobserved.
-        tracing::debug!("defender observer: WMI query not yet implemented");
+/// Currently a stub that returns all fields as `Unobserved`. When the
+/// WMI query is implemented, this struct will hold its last known values
+/// and decide per-tick whether to refresh.
+pub struct DefenderObserver;
+
+impl DefenderObserver {
+    /// Create a new Defender observer.
+    #[must_use]
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl Observer for DefenderObserver {
+    type Output = DefenderStatus;
+
+    fn name(&self) -> &'static str {
+        "defender"
     }
 
-    DefenderStatus {
-        antivirus_enabled: Observation::Unobserved,
-        real_time_protection_enabled: Observation::Unobserved,
-        tamper_protection_enabled: Observation::Unobserved,
-        signature_version: Observation::Unobserved,
-        signature_last_updated: Observation::Unobserved,
-        signature_age_days: Observation::Unobserved,
-        last_full_scan: Observation::Unobserved,
-        last_quick_scan: Observation::Unobserved,
+    fn observe(&mut self) -> DefenderStatus {
+        #[cfg(windows)]
+        {
+            tracing::debug!("defender observer: WMI query not yet implemented");
+        }
+
+        DefenderStatus {
+            antivirus_enabled: Observation::Unobserved,
+            real_time_protection_enabled: Observation::Unobserved,
+            tamper_protection_enabled: Observation::Unobserved,
+            signature_version: Observation::Unobserved,
+            signature_last_updated: Observation::Unobserved,
+            signature_age_days: Observation::Unobserved,
+            last_full_scan: Observation::Unobserved,
+            last_quick_scan: Observation::Unobserved,
+        }
     }
 }
 
@@ -35,8 +53,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn collect_returns_all_unobserved() {
-        let status = collect();
+    fn observe_returns_all_unobserved() {
+        let mut obs = DefenderObserver::new();
+        let status = obs.observe();
         assert_eq!(status.antivirus_enabled, Observation::Unobserved);
         assert_eq!(status.signature_version, Observation::Unobserved);
     }

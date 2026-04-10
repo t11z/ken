@@ -5,20 +5,37 @@
 
 use ken_protocol::status::{FirewallStatus, Observation};
 
-/// Collect firewall status.
-///
-/// Returns a `FirewallStatus` with all profiles `Unobserved` until the
-/// WMI query is implemented.
-pub fn collect() -> FirewallStatus {
-    #[cfg(windows)]
-    {
-        tracing::debug!("firewall observer: WMI query not yet implemented");
+use super::trait_def::Observer;
+
+/// Firewall observer struct per ADR-0018.
+pub struct FirewallObserver;
+
+impl FirewallObserver {
+    /// Create a new Firewall observer.
+    #[must_use]
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl Observer for FirewallObserver {
+    type Output = FirewallStatus;
+
+    fn name(&self) -> &'static str {
+        "firewall"
     }
 
-    FirewallStatus {
-        domain_profile: Observation::Unobserved,
-        private_profile: Observation::Unobserved,
-        public_profile: Observation::Unobserved,
+    fn observe(&mut self) -> FirewallStatus {
+        #[cfg(windows)]
+        {
+            tracing::debug!("firewall observer: WMI query not yet implemented");
+        }
+
+        FirewallStatus {
+            domain_profile: Observation::Unobserved,
+            private_profile: Observation::Unobserved,
+            public_profile: Observation::Unobserved,
+        }
     }
 }
 
@@ -27,8 +44,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn collect_returns_all_unobserved() {
-        let status = collect();
+    fn observe_returns_all_unobserved() {
+        let mut obs = FirewallObserver::new();
+        let status = obs.observe();
         assert_eq!(status.domain_profile, Observation::Unobserved);
     }
 }

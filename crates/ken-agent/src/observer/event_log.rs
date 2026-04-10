@@ -10,17 +10,34 @@
 
 use ken_protocol::status::{Observation, SecurityEvent};
 
-/// Collect recent security events from the Event Log.
-///
-/// Returns `Unobserved` until the `EvtQuery` implementation is complete.
-/// Per ADR-0019, the entire event list is wrapped in `Observation<T>`.
-pub fn collect() -> Observation<Vec<SecurityEvent>> {
-    #[cfg(windows)]
-    {
-        tracing::debug!("event log observer: EvtQuery not yet implemented");
+use super::trait_def::Observer;
+
+/// Event Log observer struct per ADR-0018.
+pub struct EventLogObserver;
+
+impl EventLogObserver {
+    /// Create a new Event Log observer.
+    #[must_use]
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl Observer for EventLogObserver {
+    type Output = Observation<Vec<SecurityEvent>>;
+
+    fn name(&self) -> &'static str {
+        "event_log"
     }
 
-    Observation::Unobserved
+    fn observe(&mut self) -> Observation<Vec<SecurityEvent>> {
+        #[cfg(windows)]
+        {
+            tracing::debug!("event log observer: EvtQuery not yet implemented");
+        }
+
+        Observation::Unobserved
+    }
 }
 
 /// Map a known event ID to a terse human-readable summary.
@@ -55,8 +72,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn collect_returns_unobserved() {
-        assert_eq!(collect(), Observation::Unobserved);
+    fn observe_returns_unobserved() {
+        let mut obs = EventLogObserver::new();
+        assert_eq!(obs.observe(), Observation::Unobserved);
     }
 
     #[test]
