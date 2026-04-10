@@ -359,7 +359,7 @@ fn build_security_descriptor(session_id: u32) -> Result<SecurityDescriptorHolder
             .map_err(|e| anyhow::anyhow!("WTSQueryUserToken failed: {e}"))?;
     }
 
-    let user_sid_buffer = unsafe {
+    let mut user_sid_buffer = unsafe {
         let mut needed: u32 = 0;
         let _ = GetTokenInformation(user_token, TokenUser, None, 0, &mut needed);
 
@@ -389,7 +389,7 @@ fn build_security_descriptor(session_id: u32) -> Result<SecurityDescriptorHolder
     };
 
     // --- build well-known SYSTEM SID (S-1-5-18) ---
-    let system_sid_buffer = unsafe {
+    let mut system_sid_buffer = unsafe {
         let nt_authority = SID_IDENTIFIER_AUTHORITY {
             Value: [0, 0, 0, 0, 0, 5],
         };
@@ -423,25 +423,29 @@ fn build_security_descriptor(session_id: u32) -> Result<SecurityDescriptorHolder
     // --- build ACL with two ACEs ---
     let entries = [
         EXPLICIT_ACCESS_W {
-            grfAccessPermissions: 0xC0000000, // GENERIC_READ | GENERIC_WRITE
+            grfAccessPermissions: 0xC000_0000, // GENERIC_READ | GENERIC_WRITE
             grfAccessMode: SET_ACCESS,
             grfInheritance: SUB_CONTAINERS_AND_OBJECTS_INHERIT,
             Trustee: TRUSTEE_W {
                 TrusteeForm: TRUSTEE_IS_SID,
                 TrusteeType: TRUSTEE_IS_USER,
-                ptstrName: windows::core::PWSTR(user_sid_buffer.as_ptr() as *mut u16),
+                // ptstrName is typed as PWSTR but the trustee API uses it as
+                // a tagged pointer for SID data — alignment is intentional.
+                ptstrName: windows::core::PWSTR(user_sid_buffer.as_mut_ptr().cast::<u16>()),
                 pMultipleTrustee: std::ptr::null_mut(),
                 MultipleTrusteeOperation: NO_MULTIPLE_TRUSTEE,
             },
         },
         EXPLICIT_ACCESS_W {
-            grfAccessPermissions: 0x1F01FF, // FILE_ALL_ACCESS
+            grfAccessPermissions: 0x001F_01FF, // FILE_ALL_ACCESS
             grfAccessMode: SET_ACCESS,
             grfInheritance: SUB_CONTAINERS_AND_OBJECTS_INHERIT,
             Trustee: TRUSTEE_W {
                 TrusteeForm: TRUSTEE_IS_SID,
                 TrusteeType: TRUSTEE_IS_WELL_KNOWN_GROUP,
-                ptstrName: windows::core::PWSTR(system_sid_buffer.as_ptr() as *mut u16),
+                // ptstrName is typed as PWSTR but the trustee API uses it as
+                // a tagged pointer for SID data — alignment is intentional.
+                ptstrName: windows::core::PWSTR(system_sid_buffer.as_mut_ptr().cast::<u16>()),
                 pMultipleTrustee: std::ptr::null_mut(),
                 MultipleTrusteeOperation: NO_MULTIPLE_TRUSTEE,
             },
