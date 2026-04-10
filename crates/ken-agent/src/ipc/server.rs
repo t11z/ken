@@ -374,7 +374,7 @@ fn build_security_descriptor(session_id: u32) -> Result<SecurityDescriptorHolder
             &mut needed,
         )
         .map_err(|e| {
-            let _ = CloseHandle(user_token);
+            unsafe { let _ = CloseHandle(user_token); }
             anyhow::anyhow!("GetTokenInformation failed: {e}")
         })?;
 
@@ -415,7 +415,7 @@ fn build_security_descriptor(session_id: u32) -> Result<SecurityDescriptorHolder
         let sid_len = GetLengthSid(sid);
         let mut sid_copy = vec![0u8; usize::from(sid_len)];
         CopySid(sid_len, PSID(sid_copy.as_mut_ptr().cast()), sid).map_err(|e| {
-            FreeSid(sid);
+            unsafe { FreeSid(sid); }
             anyhow::anyhow!("CopySid for SYSTEM SID failed: {e}")
         })?;
         FreeSid(sid);
