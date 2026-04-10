@@ -15,7 +15,7 @@
   description: New capability within the current scope
 
 - name: type/adr
-  color: 5319e7
+  color: "5319e7"
   description: Proposal, draft, or revision of an Architecture Decision Record
 
 - name: type/docs
@@ -65,7 +65,7 @@
   description: New, not yet reviewed by a maintainer
 
 - name: status/needs-adr
-  color: 5319e7
+  color: "5319e7"
   description: Cannot proceed until an ADR is drafted or accepted
 
 - name: status/needs-discussion
