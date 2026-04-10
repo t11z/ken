@@ -5,6 +5,36 @@
 # under ~200 KB. Add new topics as new conversation areas open up;
 # do not expand existing ones to cover unrelated questions.
 
+[topics.agent-observers]
+description = """
+Agent-side observer subsystem: the trait or interface that defines an
+observer, the existing observer implementations (Defender, Windows
+Update, firewall, BitLocker, event log), the heartbeat-loop code that
+invokes them and assembles the StatusSnapshot, and the protocol-side
+StatusSnapshot definition the observers populate. Use this topic when
+reasoning about observer execution model, observer caching, status
+field semantics, or adding a new observer.
+"""
+paths = [
+  # --- Agent: observer subsystem (the actual collection logic)
+  "crates/ken-agent/src/observer/mod.rs",
+  # NOTE: I do not yet know the file layout under observer/ — please
+  # expand this list to whatever exists. The intent is "everything in
+  # crates/ken-agent/src/observer/".
+
+  # --- Agent: the loop that drives observers and builds the heartbeat
+  "crates/ken-agent/src/worker/mod.rs",
+  "crates/ken-agent/src/worker/main_loop.rs",
+
+  # --- Protocol: the shape of what observers feed into
+  "crates/ken-protocol/src/heartbeat.rs",
+  "crates/ken-protocol/src/status.rs",
+
+  # --- Crate-level conventions
+  "crates/ken-agent/CLAUDE.md",
+  "crates/ken-protocol/CLAUDE.md",
+]
+
 [topics.agent-mtls]
 description = """
 Server-side mTLS stack for the agent listener: TLS configuration, custom
