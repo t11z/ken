@@ -15,6 +15,7 @@ use crate::audit::AuditLogger;
 use crate::config::{AgentConfig, DataPaths, EnrolledCredentials};
 use crate::net::client::KenApiClient;
 use crate::observer::snapshot::collect_snapshot;
+use crate::worker::commands;
 
 /// Run the main worker loop until shutdown is signalled.
 ///
@@ -33,10 +34,29 @@ pub async fn run(shutdown: Arc<AtomicBool>, paths: &DataPaths) -> Result<(), any
     }
 
     let credentials = EnrolledCredentials::load(paths)?;
-    let client = KenApiClient::new(&credentials, &config.server.url);
-    let audit = AuditLogger::open(&paths.audit_log, config.audit.max_log_size_bytes)?;
+    let client = KenApiClient::new(&credentials, &config.server.url)?;
+    let audit = Arc::new(AuditLogger::open(
+        &paths.audit_log,
+        config.audit.max_log_size_bytes,
+    )?);
 
     audit.log(AuditEventKind::ServiceStarted, "worker loop started");
+
+    // Create shared consent state for the pipe server and command
+    // processor to communicate through.
+    let consent_state = commands::new_consent_state();
+
+    // Start the Named Pipe IPC server on Windows.
+    #[cfg(windows)]
+    {
+        let cs = consent_state.clone();
+        let sd = shutdown.clone();
+        let au = audit.clone();
+        let pa = Arc::new(DataPaths::new(&crate::config::data_dir()));
+        tokio::task::spawn_blocking(move || {
+            crate::ipc::server::run(cs, sd, au, pa);
+        });
+    }
 
     let mut heartbeat_interval = Duration::from_secs(u64::from(config.heartbeat.interval_seconds));
 
@@ -72,7 +92,7 @@ pub async fn run(shutdown: Arc<AtomicBool>, paths: &DataPaths) -> Result<(), any
                         &format!("received command {}", command.command_id),
                     );
 
-                    let outcome = crate::worker::commands::process(command);
+                    let outcome = commands::process(command, &consent_state).await;
                     audit.log(
                         AuditEventKind::CommandCompleted {
                             command_id: outcome.command_id,
@@ -97,7 +117,7 @@ pub async fn run(shutdown: Arc<AtomicBool>, paths: &DataPaths) -> Result<(), any
             }
         }
 
-        // Sleep with jitter, respecting shutdown
+        // Sleep with jitter, respecting shutdown.
         let jitter_secs = u64::from(config.heartbeat.jitter_seconds);
         let jitter = if jitter_secs > 0 {
             Duration::from_secs(simple_random() % (jitter_secs + 1))
@@ -139,7 +159,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let paths = DataPaths::new(dir.path());
 
-        // Create a minimal config (not enrolled)
+        // Create a minimal config (not enrolled).
         std::fs::create_dir_all(paths.config_file.parent().unwrap()).unwrap();
         std::fs::write(&paths.config_file, "").unwrap();
 

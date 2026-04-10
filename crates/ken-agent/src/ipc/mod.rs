@@ -3,23 +3,27 @@
 //! Uses Named Pipes on Windows. On non-Windows platforms, provides
 //! stub implementations for development and testing.
 
+use ken_protocol::ids::CommandId;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-/// A request from the Tray App to the service (or service to Tray App).
+/// A request from the Tray App to the service.
 ///
 /// Per ADR-0010, the wire format is length-prefixed JSON: 4-byte
-/// little-endian length followed by a UTF-8 JSON body.
+/// little-endian length followed by a UTF-8 JSON body. The tray app
+/// is always the initiator; the service is always the responder.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum IpcRequest {
     /// Query the service's current status.
     GetStatus,
-    /// Request user consent for a remote session.
-    RequestConsent {
-        /// Description of why the session is requested.
-        session_description: String,
-        /// Who is requesting the session.
-        admin_name: String,
+    /// Ask whether there is a pending consent request (tray app polls).
+    GetPendingConsent,
+    /// Report the user's consent decision back to the service.
+    SubmitConsentResponse {
+        /// Which command this response is for.
+        command_id: CommandId,
+        /// Whether the user granted consent.
+        granted: bool,
     },
     /// Get the tail of the audit log.
     GetAuditLogTail {
@@ -37,10 +41,19 @@ pub enum IpcRequest {
 pub enum IpcResponse {
     /// Current agent status.
     Status(AgentStatus),
-    /// User granted consent for the session.
-    ConsentGranted,
-    /// User denied consent.
-    ConsentDenied,
+    /// A consent request is pending; the tray app should show the dialog.
+    ConsentPending {
+        /// Which command this consent request is for.
+        command_id: CommandId,
+        /// Description of why the session is requested.
+        session_description: String,
+        /// Who is requesting the session.
+        admin_name: String,
+    },
+    /// No consent request is pending.
+    NoPendingConsent,
+    /// The service received the user's consent decision.
+    ConsentResponseAcknowledged,
     /// Tail of the audit log.
     AuditLogTail(Vec<String>),
     /// Kill switch was activated.
@@ -78,6 +91,22 @@ pub enum ConsentOutcome {
     TimedOut,
 }
 
+/// Information about a pending consent request, returned to the client.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PendingConsentInfo {
+    /// Which command this consent request is for.
+    pub command_id: CommandId,
+    /// Description of why the session is requested.
+    pub session_description: String,
+    /// Who is requesting the session.
+    pub admin_name: String,
+}
+
+#[cfg(all(windows, feature = "tray-app"))]
+pub mod client;
+#[cfg(windows)]
+pub mod server;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -91,10 +120,29 @@ mod tests {
     }
 
     #[test]
-    fn request_consent_roundtrip() {
-        let req = IpcRequest::RequestConsent {
-            session_description: "checking Defender".to_string(),
-            admin_name: "IT Admin".to_string(),
+    fn request_get_pending_consent_roundtrip() {
+        let req = IpcRequest::GetPendingConsent;
+        let json = serde_json::to_string(&req).unwrap();
+        let back: IpcRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(req, back);
+    }
+
+    #[test]
+    fn request_submit_consent_response_roundtrip() {
+        let req = IpcRequest::SubmitConsentResponse {
+            command_id: CommandId::new(),
+            granted: true,
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        let back: IpcRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(req, back);
+    }
+
+    #[test]
+    fn request_submit_consent_denied_roundtrip() {
+        let req = IpcRequest::SubmitConsentResponse {
+            command_id: CommandId::new(),
+            granted: false,
         };
         let json = serde_json::to_string(&req).unwrap();
         let back: IpcRequest = serde_json::from_str(&json).unwrap();
@@ -133,8 +181,28 @@ mod tests {
     }
 
     #[test]
-    fn response_consent_granted_roundtrip() {
-        let resp = IpcResponse::ConsentGranted;
+    fn response_consent_pending_roundtrip() {
+        let resp = IpcResponse::ConsentPending {
+            command_id: CommandId::new(),
+            session_description: "checking Defender".to_string(),
+            admin_name: "IT Admin".to_string(),
+        };
+        let json = serde_json::to_string(&resp).unwrap();
+        let back: IpcResponse = serde_json::from_str(&json).unwrap();
+        assert_eq!(resp, back);
+    }
+
+    #[test]
+    fn response_no_pending_consent_roundtrip() {
+        let resp = IpcResponse::NoPendingConsent;
+        let json = serde_json::to_string(&resp).unwrap();
+        let back: IpcResponse = serde_json::from_str(&json).unwrap();
+        assert_eq!(resp, back);
+    }
+
+    #[test]
+    fn response_consent_acknowledged_roundtrip() {
+        let resp = IpcResponse::ConsentResponseAcknowledged;
         let json = serde_json::to_string(&resp).unwrap();
         let back: IpcResponse = serde_json::from_str(&json).unwrap();
         assert_eq!(resp, back);
@@ -151,6 +219,14 @@ mod tests {
     #[test]
     fn response_error_roundtrip() {
         let resp = IpcResponse::Error("something went wrong".to_string());
+        let json = serde_json::to_string(&resp).unwrap();
+        let back: IpcResponse = serde_json::from_str(&json).unwrap();
+        assert_eq!(resp, back);
+    }
+
+    #[test]
+    fn response_audit_log_tail_roundtrip() {
+        let resp = IpcResponse::AuditLogTail(vec!["line 1".to_string(), "line 2".to_string()]);
         let json = serde_json::to_string(&resp).unwrap();
         let back: IpcResponse = serde_json::from_str(&json).unwrap();
         assert_eq!(resp, back);
