@@ -1,20 +1,21 @@
-//! Windows Update observer per ADR-0020.
+//! Windows Update observer per ADR-0020 and ADR-0021.
 //!
 //! Collects pending update counts from the Windows Update Agent COM API
 //! on a background-refresh schedule with a one-hour cache TTL. The
-//! heartbeat-tick path never blocks on a WUA call.
+//! heartbeat-tick path never blocks on a WUA call; it reads from the
+//! internal cache and tags values via [`TickBoundary`] per ADR-0021.
 //!
 //! On non-Windows platforms, all fields are `Unobserved`.
 
-use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
 use std::time::Duration;
 
 use ken_protocol::status::{Observation, WindowsUpdateStatus};
 use time::OffsetDateTime;
 use tokio::sync::watch;
 
-use super::trait_def::Observer;
+use super::lifecycle::ObserverLifecycle;
+use super::tick::TickBoundary;
+use super::trait_def::{Observer, ObserverKind};
 
 /// Cache TTL for WUA results. Per ADR-0020, hardcoded at one hour.
 const WUA_CACHE_TTL: Duration = Duration::from_secs(3600);
@@ -32,110 +33,85 @@ struct WuaCounts {
     observed_at: OffsetDateTime,
 }
 
-/// Windows Update observer struct per ADR-0018 and ADR-0020.
+/// Windows Update observer struct per ADR-0018, ADR-0020, and ADR-0021.
 ///
-/// On Windows, spawns a long-lived background task at construction that
-/// periodically queries WUA and writes results into a shared cache. The
-/// `observe` method on the heartbeat path reads the cache and never
-/// touches WUA directly.
+/// On Windows, the [`start`](Observer::start) lifecycle hook spawns a
+/// long-lived background task that periodically queries WUA and writes
+/// results into a shared cache. The [`observe`](Observer::observe)
+/// method on the heartbeat path reads the cache and tags values via
+/// [`TickBoundary::tag`], never touching WUA directly.
 ///
 /// On non-Windows, all fields are permanently `Unobserved`.
 pub struct WindowsUpdateObserver {
     /// Receiver for the shared cache written by the background task.
     cache_rx: watch::Receiver<Option<WuaCounts>>,
 
-    /// Shutdown signal for the background task.
-    _shutdown: Arc<AtomicBool>,
+    /// Sender half, held until [`start`](Observer::start) passes it
+    /// to the background task. `None` after `start` is called or in
+    /// test-only construction.
+    cache_tx: Option<watch::Sender<Option<WuaCounts>>>,
 }
 
 impl WindowsUpdateObserver {
     /// Create a new Windows Update observer.
     ///
-    /// On Windows, spawns the background WUA refresh task using the
-    /// provided Tokio handle. On non-Windows, no background work occurs.
+    /// The background task is **not** spawned here. It is spawned in
+    /// [`start`](Observer::start) via the [`ObserverLifecycle`] hook,
+    /// per ADR-0021.
     #[must_use]
-    pub fn new(shutdown: Arc<AtomicBool>) -> Self {
-        let cache_rx = Self::init_background(shutdown.clone());
+    pub fn new() -> Self {
+        let (cache_tx, cache_rx) = watch::channel(None);
         Self {
             cache_rx,
-            _shutdown: shutdown,
+            cache_tx: Some(cache_tx),
         }
-    }
-
-    /// On Windows, spawn the WUA background refresh task and return the
-    /// receiver end of the cache channel. On non-Windows, return a
-    /// receiver whose sender has been dropped (permanently `None`).
-    #[cfg(windows)]
-    fn init_background(shutdown: Arc<AtomicBool>) -> watch::Receiver<Option<WuaCounts>> {
-        let (cache_tx, cache_rx) = watch::channel(None);
-        tokio::spawn(async move {
-            wua_background_loop(cache_tx, shutdown).await;
-        });
-        cache_rx
-    }
-
-    /// On non-Windows, no background task — return an inert channel.
-    #[cfg(not(windows))]
-    fn init_background(_shutdown: Arc<AtomicBool>) -> watch::Receiver<Option<WuaCounts>> {
-        let (_cache_tx, cache_rx) = watch::channel(None);
-        cache_rx
     }
 
     /// Create an observer for testing without spawning a background task.
     /// The provided receiver controls what values the observer sees.
     #[cfg(test)]
-    fn new_with_receiver(
-        cache_rx: watch::Receiver<Option<WuaCounts>>,
-        shutdown: Arc<AtomicBool>,
-    ) -> Self {
+    fn new_with_receiver(cache_rx: watch::Receiver<Option<WuaCounts>>) -> Self {
         Self {
             cache_rx,
-            _shutdown: shutdown,
+            cache_tx: None,
+        }
+    }
+
+    /// Create an observer pre-loaded with cached values for testing.
+    #[cfg(test)]
+    pub(crate) fn new_with_cache(total: u32, critical: u32, observed_at: OffsetDateTime) -> Self {
+        let counts = WuaCounts {
+            total,
+            critical,
+            observed_at,
+        };
+        let (_tx, rx) = watch::channel(Some(counts));
+        Self {
+            cache_rx: rx,
+            cache_tx: None,
         }
     }
 }
 
 impl Observer for WindowsUpdateObserver {
     type Output = WindowsUpdateStatus;
+    const KIND: ObserverKind = ObserverKind::BackgroundRefresh;
 
     fn name(&self) -> &'static str {
         "windows_update"
     }
 
-    fn observe(&mut self) -> WindowsUpdateStatus {
+    fn observe(&mut self, tick: &TickBoundary) -> WindowsUpdateStatus {
         let cached = *self.cache_rx.borrow();
 
         // The registry-based fields (last_search_time, last_install_time) are
         // cheap reads not covered by ADR-0020. They remain Unobserved until
         // a separate cheap-observer implementation lands.
         let (pending_update_count, pending_critical_update_count) = match cached {
-            Some(counts) => {
-                let age = OffsetDateTime::now_utc() - counts.observed_at;
-                if age < time::Duration::seconds(1) {
-                    // Observed within the current tick window.
-                    (
-                        Observation::Fresh {
-                            value: counts.total,
-                            observed_at: counts.observed_at,
-                        },
-                        Observation::Fresh {
-                            value: counts.critical,
-                            observed_at: counts.observed_at,
-                        },
-                    )
-                } else {
-                    (
-                        Observation::Cached {
-                            value: counts.total,
-                            observed_at: counts.observed_at,
-                        },
-                        Observation::Cached {
-                            value: counts.critical,
-                            observed_at: counts.observed_at,
-                        },
-                    )
-                }
-            }
+            Some(counts) => (
+                tick.tag(counts.total, counts.observed_at),
+                tick.tag(counts.critical, counts.observed_at),
+            ),
             None => (Observation::Unobserved, Observation::Unobserved),
         };
 
@@ -144,6 +120,29 @@ impl Observer for WindowsUpdateObserver {
             last_install_time: Observation::Unobserved,
             pending_update_count,
             pending_critical_update_count,
+        }
+    }
+
+    fn start(&mut self, lifecycle: ObserverLifecycle) {
+        // Take the sender out — start() is called exactly once.
+        let Some(cache_tx) = self.cache_tx.take() else {
+            return;
+        };
+
+        #[cfg(windows)]
+        {
+            let shutdown = lifecycle.shutdown_signal().clone();
+            lifecycle.spawn_background(async move {
+                wua_background_loop(cache_tx, shutdown).await;
+            });
+        }
+
+        #[cfg(not(windows))]
+        {
+            let _ = lifecycle;
+            // Drop the sender so the receiver permanently returns None,
+            // producing Unobserved for all fields on non-Windows.
+            drop(cache_tx);
         }
     }
 }
@@ -160,7 +159,7 @@ impl Observer for WindowsUpdateObserver {
 #[cfg(windows)]
 async fn wua_background_loop(
     cache_tx: watch::Sender<Option<WuaCounts>>,
-    shutdown: Arc<AtomicBool>,
+    shutdown: std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) {
     use std::sync::atomic::Ordering;
 
@@ -362,10 +361,10 @@ mod tests {
 
     #[test]
     fn observe_returns_all_unobserved_without_background_task() {
-        let shutdown = Arc::new(AtomicBool::new(false));
         let (_tx, rx) = watch::channel(None);
-        let mut obs = WindowsUpdateObserver::new_with_receiver(rx, shutdown);
-        let status = obs.observe();
+        let mut obs = WindowsUpdateObserver::new_with_receiver(rx);
+        let tick = TickBoundary::now();
+        let status = obs.observe(&tick);
         assert_eq!(status.pending_update_count, Observation::Unobserved);
         assert_eq!(
             status.pending_critical_update_count,
@@ -375,7 +374,6 @@ mod tests {
 
     #[test]
     fn observe_returns_cached_when_cache_is_old() {
-        let shutdown = Arc::new(AtomicBool::new(false));
         let old_time = OffsetDateTime::now_utc() - time::Duration::hours(2);
         let counts = WuaCounts {
             total: 5,
@@ -383,10 +381,11 @@ mod tests {
             observed_at: old_time,
         };
         let (_tx, rx) = watch::channel(Some(counts));
-        let mut obs = WindowsUpdateObserver::new_with_receiver(rx, shutdown);
-        let status = obs.observe();
+        let mut obs = WindowsUpdateObserver::new_with_receiver(rx);
+        // Tick boundary is now, which is after old_time → Cached.
+        let tick = TickBoundary::now();
+        let status = obs.observe(&tick);
 
-        // Values older than 1 second are Cached.
         match &status.pending_update_count {
             Observation::Cached { value, observed_at } => {
                 assert_eq!(*value, 5);
@@ -404,8 +403,7 @@ mod tests {
     }
 
     #[test]
-    fn observe_returns_fresh_when_cache_is_recent() {
-        let shutdown = Arc::new(AtomicBool::new(false));
+    fn observe_returns_fresh_when_observed_at_or_after_tick() {
         let now = OffsetDateTime::now_utc();
         let counts = WuaCounts {
             total: 3,
@@ -413,10 +411,11 @@ mod tests {
             observed_at: now,
         };
         let (_tx, rx) = watch::channel(Some(counts));
-        let mut obs = WindowsUpdateObserver::new_with_receiver(rx, shutdown);
-        let status = obs.observe();
+        let mut obs = WindowsUpdateObserver::new_with_receiver(rx);
+        // Tick boundary at or before observed_at → Fresh.
+        let tick = TickBoundary::at(now - time::Duration::milliseconds(1));
+        let status = obs.observe(&tick);
 
-        // Values within 1 second are Fresh.
         match &status.pending_update_count {
             Observation::Fresh { value, .. } => {
                 assert_eq!(*value, 3);
@@ -435,7 +434,6 @@ mod tests {
     fn zero_pending_updates_is_fresh_not_unobserved() {
         // Per ADR-0020: "A successful search that returns zero updates
         // is not a failure. It maps to Observation::Fresh { value: 0, ... }"
-        let shutdown = Arc::new(AtomicBool::new(false));
         let now = OffsetDateTime::now_utc();
         let counts = WuaCounts {
             total: 0,
@@ -443,8 +441,9 @@ mod tests {
             observed_at: now,
         };
         let (_tx, rx) = watch::channel(Some(counts));
-        let mut obs = WindowsUpdateObserver::new_with_receiver(rx, shutdown);
-        let status = obs.observe();
+        let mut obs = WindowsUpdateObserver::new_with_receiver(rx);
+        let tick = TickBoundary::at(now);
+        let status = obs.observe(&tick);
 
         match &status.pending_update_count {
             Observation::Fresh { value, .. } => assert_eq!(*value, 0),
@@ -456,10 +455,10 @@ mod tests {
     fn failure_produces_unobserved() {
         // When the background task has never succeeded (cache is None),
         // the observer reports Unobserved for both fields.
-        let shutdown = Arc::new(AtomicBool::new(false));
         let (_tx, rx) = watch::channel(None);
-        let mut obs = WindowsUpdateObserver::new_with_receiver(rx, shutdown);
-        let status = obs.observe();
+        let mut obs = WindowsUpdateObserver::new_with_receiver(rx);
+        let tick = TickBoundary::now();
+        let status = obs.observe(&tick);
         assert_eq!(status.pending_update_count, Observation::Unobserved);
         assert_eq!(
             status.pending_critical_update_count,
@@ -470,7 +469,6 @@ mod tests {
     #[test]
     fn both_counts_always_paired() {
         // Per ADR-0020: the two counts are always emitted as a pair.
-        let shutdown = Arc::new(AtomicBool::new(false));
         let now = OffsetDateTime::now_utc();
         let counts = WuaCounts {
             total: 7,
@@ -478,8 +476,9 @@ mod tests {
             observed_at: now,
         };
         let (_tx, rx) = watch::channel(Some(counts));
-        let mut obs = WindowsUpdateObserver::new_with_receiver(rx, shutdown);
-        let status = obs.observe();
+        let mut obs = WindowsUpdateObserver::new_with_receiver(rx);
+        let tick = TickBoundary::at(now);
+        let status = obs.observe(&tick);
 
         // Both should be the same variant (Fresh here).
         let total_is_fresh = matches!(status.pending_update_count, Observation::Fresh { .. });

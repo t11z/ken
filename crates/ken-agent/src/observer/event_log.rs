@@ -10,7 +10,9 @@
 
 use ken_protocol::status::{Observation, SecurityEvent};
 
-use super::trait_def::Observer;
+use super::lifecycle::ObserverLifecycle;
+use super::tick::TickBoundary;
+use super::trait_def::{Observer, ObserverKind};
 
 /// Event Log observer struct per ADR-0018.
 pub struct EventLogObserver;
@@ -25,18 +27,23 @@ impl EventLogObserver {
 
 impl Observer for EventLogObserver {
     type Output = Observation<Vec<SecurityEvent>>;
+    const KIND: ObserverKind = ObserverKind::Synchronous;
 
     fn name(&self) -> &'static str {
         "event_log"
     }
 
-    fn observe(&mut self) -> Observation<Vec<SecurityEvent>> {
+    fn observe(&mut self, _tick: &TickBoundary) -> Observation<Vec<SecurityEvent>> {
         #[cfg(windows)]
         {
             tracing::debug!("event log observer: EvtQuery not yet implemented");
         }
 
         Observation::Unobserved
+    }
+
+    fn start(&mut self, _lifecycle: ObserverLifecycle) {
+        // Synchronous observer — no background work to start.
     }
 }
 
@@ -74,7 +81,8 @@ mod tests {
     #[test]
     fn observe_returns_unobserved() {
         let mut obs = EventLogObserver::new();
-        assert_eq!(obs.observe(), Observation::Unobserved);
+        let tick = TickBoundary::now();
+        assert_eq!(obs.observe(&tick), Observation::Unobserved);
     }
 
     #[test]

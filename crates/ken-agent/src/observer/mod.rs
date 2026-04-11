@@ -4,15 +4,19 @@
 //! firewall, `BitLocker`, Windows Update, Event Log) and returns the
 //! corresponding type from `ken_protocol::status`.
 //!
-//! Per ADR-0018, observers are structs implementing the [`Observer`] trait.
-//! The worker loop invokes them via `spawn_blocking` with a per-observer
-//! time budget.
+//! Per ADR-0018 and ADR-0021, observers are structs implementing the
+//! [`Observer`](trait_def::Observer) trait. Synchronous observers are
+//! invoked via `spawn_blocking` with a per-observer time budget.
+//! Background-refresh observers are invoked directly and do their
+//! real work in a task spawned through [`ObserverLifecycle`](lifecycle::ObserverLifecycle).
 
 pub mod bitlocker;
 pub mod defender;
 pub mod event_log;
 pub mod firewall;
+pub mod lifecycle;
 pub mod snapshot;
+pub mod tick;
 pub mod trait_def;
 pub mod windows_update;
 
