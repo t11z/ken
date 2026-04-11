@@ -16,7 +16,6 @@ use std::time::Duration;
 
 use ken_protocol::status::{
     BitLockerStatus, DefenderStatus, FirewallStatus, Observation, OsStatusSnapshot,
-    WindowsUpdateStatus,
 };
 use time::OffsetDateTime;
 
@@ -250,7 +249,7 @@ impl<O: Observer> ObserverSlot<O> {
 /// shared join handles and joined on [`shutdown`](Self::shutdown).
 pub struct ObserverSet {
     /// Per ADR-0022: each slot holds the observer in an Arc<Mutex<O>>
-    /// so that panics inside spawn_blocking do not destroy the observer.
+    /// so that panics inside `spawn_blocking` do not destroy the observer.
     defender: ObserverSlot<DefenderObserver>,
     firewall: ObserverSlot<FirewallObserver>,
     bitlocker: ObserverSlot<BitLockerObserver>,
@@ -436,10 +435,7 @@ where
     // the mutex is always uncontended here. Per ADR-0022, recover from poison
     // even though a watch::borrow() read path cannot panic in practice; the
     // recovery is a no-op in the steady state.
-    let mut guard = slot
-        .observer
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let mut guard = slot.observer.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
 
     let result = guard.observe(tick);
     drop(guard);
@@ -536,9 +532,9 @@ where
             // raw reference to the Mutex interior), but any panic leaves the
             // guard in a well-defined dropped state that poisons the Mutex,
             // which is recovered on the next tick as documented above.
-            Some(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                guard.observe(&tick)
-            })))
+            Some(std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+                || guard.observe(&tick),
+            )))
             // guard drops here, releasing (or poisoning) the mutex.
         }),
     )
@@ -1101,10 +1097,7 @@ mod tests {
         }
 
         // The slot still holds the observer — verify by locking the Arc.
-        let guard = slot
-            .observer
-            .try_lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let guard = slot.observer.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         assert_eq!(
             guard.count.load(Ordering::SeqCst),
             5,
@@ -1328,10 +1321,7 @@ mod tests {
         }
 
         // Panicking observer's slot is still alive — observer is accessible.
-        let guard = panic_slot
-            .observer
-            .try_lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let guard = panic_slot.observer.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         assert_eq!(
             guard.count.load(Ordering::SeqCst),
             5,
