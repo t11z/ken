@@ -143,13 +143,19 @@ pub fn run(
                     tracing::warn!(error = %e, "failed to write IPC response");
                 }
 
-                // Kill switch: signal shutdown AFTER the response is sent
-                // so the tray app sees the success confirmation.
+                // ADR-0012 step 5: after the response is sent to the tray,
+                // set SERVICE_DISABLED then signal shutdown. The
+                // finalize_activation helper handles both and logs any
+                // SERVICE_DISABLED failure to the audit log.
                 if matches!(request, IpcRequest::ActivateKillSwitch)
                     && matches!(response, IpcResponse::KillSwitchActivated)
                 {
-                    tracing::info!("kill switch activated via IPC, signalling shutdown");
-                    shutdown.store(true, Ordering::SeqCst);
+                    crate::killswitch::finalize_activation(
+                        &audit,
+                        &shutdown,
+                        crate::service::lifecycle::SERVICE_NAME,
+                        crate::killswitch::set_service_disabled,
+                    );
                 }
             }
             Err(e) => {
@@ -266,8 +272,12 @@ fn handle_get_audit_tail(audit: &AuditLogger, lines: u32) -> IpcResponse {
     IpcResponse::AuditLogTail(strings)
 }
 
-/// Handle kill-switch activation: write state file, disable service,
-/// and respond before signalling shutdown.
+/// Handle kill-switch activation: write state file and respond.
+///
+/// The `SERVICE_DISABLED` call and shutdown-flag set happen in
+/// [`crate::killswitch::finalize_activation`], called from the
+/// `run()` loop after the response is written to the pipe (ADR-0012
+/// step 5).
 fn handle_kill_switch(paths: &crate::config::DataPaths, audit: &AuditLogger) -> IpcResponse {
     let user = "tray-app-user";
 
@@ -282,41 +292,7 @@ fn handle_kill_switch(paths: &crate::config::DataPaths, audit: &AuditLogger) -> 
         "kill switch activated via IPC tray app request",
     );
 
-    // Disable the service so it does not restart. Best-effort.
-    if let Err(e) = disable_service() {
-        tracing::warn!(error = %e, "failed to set service to disabled");
-    }
-
     IpcResponse::KillSwitchActivated
-}
-
-/// Set the Ken Agent service startup type to Disabled per ADR-0012.
-fn disable_service() -> Result<(), anyhow::Error> {
-    use windows_service::service::ServiceAccess;
-    use windows_service::service_manager::{ServiceManager, ServiceManagerAccess};
-
-    let manager = ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
-    let service = manager.open_service(
-        crate::service::lifecycle::SERVICE_NAME,
-        ServiceAccess::CHANGE_CONFIG,
-    )?;
-
-    let config = windows_service::service::ServiceInfo {
-        name: std::ffi::OsString::from(crate::service::lifecycle::SERVICE_NAME),
-        display_name: std::ffi::OsString::from(crate::service::lifecycle::SERVICE_DISPLAY_NAME),
-        service_type: windows_service::service::ServiceType::OWN_PROCESS,
-        start_type: windows_service::service::ServiceStartType::Disabled,
-        error_control: windows_service::service::ServiceErrorControl::Normal,
-        executable_path: std::env::current_exe()?,
-        launch_arguments: vec![std::ffi::OsString::from("run-service")],
-        dependencies: vec![],
-        account_name: None,
-        account_password: None,
-    };
-    service.change_config(&config)?;
-
-    tracing::info!("service startup type set to Disabled");
-    Ok(())
 }
 
 // --------------- security descriptor ---------------

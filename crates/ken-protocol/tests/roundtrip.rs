@@ -512,6 +512,7 @@ fn audit_event_kind_all_variants() {
         AuditEventKind::ConsentGranted,
         AuditEventKind::ConsentDenied,
         AuditEventKind::KillSwitchActivated,
+        AuditEventKind::KillSwitchStartupRefused,
         AuditEventKind::UpdateCheckPerformed,
         AuditEventKind::UpdateDownloaded {
             version: "0.2.0".to_string(),

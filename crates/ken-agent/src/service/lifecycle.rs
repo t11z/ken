@@ -41,8 +41,23 @@ pub async fn service_loop(
     let data_dir = crate::config::data_dir();
     let paths = crate::config::DataPaths::new(&data_dir);
 
-    // ADR-0012: Check kill switch before any other work.
+    // ADR-0012 step 6: Check kill switch before any other work.
+    // If the state file is present, log the refusal, re-assert
+    // SERVICE_DISABLED, and exit without further initialization.
     if crate::killswitch::is_active(&paths.kill_switch_file) {
+        if let Ok(audit) = crate::audit::AuditLogger::open(
+            &paths.audit_log,
+            crate::config::AgentConfig::load(&paths.config_file)
+                .unwrap_or_default()
+                .audit
+                .max_log_size_bytes,
+        ) {
+            crate::killswitch::handle_startup_refused(
+                &audit,
+                SERVICE_NAME,
+                crate::killswitch::set_service_disabled,
+            );
+        }
         tracing::warn!("kill switch is active, refusing to start");
         return;
     }
