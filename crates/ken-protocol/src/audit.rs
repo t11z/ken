@@ -71,6 +71,10 @@ pub enum AuditEventKind {
     /// The user activated the local kill switch (ADR-0001 T1-6).
     KillSwitchActivated,
 
+    /// The service refused to start because the kill switch is active
+    /// (ADR-0012 step 6).
+    KillSwitchStartupRefused,
+
     /// The agent checked for updates.
     UpdateCheckPerformed,
 
