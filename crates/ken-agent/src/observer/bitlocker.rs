@@ -5,7 +5,9 @@
 
 use ken_protocol::status::{BitLockerStatus, Observation};
 
-use super::trait_def::Observer;
+use super::lifecycle::ObserverLifecycle;
+use super::tick::TickBoundary;
+use super::trait_def::{Observer, ObserverKind};
 
 /// `BitLocker` observer struct per ADR-0018.
 pub struct BitLockerObserver;
@@ -20,12 +22,13 @@ impl BitLockerObserver {
 
 impl Observer for BitLockerObserver {
     type Output = BitLockerStatus;
+    const KIND: ObserverKind = ObserverKind::Synchronous;
 
     fn name(&self) -> &'static str {
         "bitlocker"
     }
 
-    fn observe(&mut self) -> BitLockerStatus {
+    fn observe(&mut self, _tick: &TickBoundary) -> BitLockerStatus {
         #[cfg(windows)]
         {
             tracing::debug!("bitlocker observer: WMI query not yet implemented");
@@ -34,6 +37,10 @@ impl Observer for BitLockerObserver {
         BitLockerStatus {
             volumes: Observation::Unobserved,
         }
+    }
+
+    fn start(&mut self, _lifecycle: ObserverLifecycle) {
+        // Synchronous observer — no background work to start.
     }
 }
 
@@ -44,7 +51,8 @@ mod tests {
     #[test]
     fn observe_returns_all_unobserved() {
         let mut obs = BitLockerObserver::new();
-        let status = obs.observe();
+        let tick = TickBoundary::now();
+        let status = obs.observe(&tick);
         assert_eq!(status.volumes, Observation::Unobserved);
     }
 }

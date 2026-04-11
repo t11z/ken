@@ -5,7 +5,9 @@
 
 use ken_protocol::status::{DefenderStatus, Observation};
 
-use super::trait_def::Observer;
+use super::lifecycle::ObserverLifecycle;
+use super::tick::TickBoundary;
+use super::trait_def::{Observer, ObserverKind};
 
 /// Defender observer struct per ADR-0018.
 ///
@@ -24,12 +26,13 @@ impl DefenderObserver {
 
 impl Observer for DefenderObserver {
     type Output = DefenderStatus;
+    const KIND: ObserverKind = ObserverKind::Synchronous;
 
     fn name(&self) -> &'static str {
         "defender"
     }
 
-    fn observe(&mut self) -> DefenderStatus {
+    fn observe(&mut self, _tick: &TickBoundary) -> DefenderStatus {
         #[cfg(windows)]
         {
             tracing::debug!("defender observer: WMI query not yet implemented");
@@ -46,6 +49,10 @@ impl Observer for DefenderObserver {
             last_quick_scan: Observation::Unobserved,
         }
     }
+
+    fn start(&mut self, _lifecycle: ObserverLifecycle) {
+        // Synchronous observer — no background work to start.
+    }
 }
 
 #[cfg(test)]
@@ -55,7 +62,8 @@ mod tests {
     #[test]
     fn observe_returns_all_unobserved() {
         let mut obs = DefenderObserver::new();
-        let status = obs.observe();
+        let tick = TickBoundary::now();
+        let status = obs.observe(&tick);
         assert_eq!(status.antivirus_enabled, Observation::Unobserved);
         assert_eq!(status.signature_version, Observation::Unobserved);
     }
