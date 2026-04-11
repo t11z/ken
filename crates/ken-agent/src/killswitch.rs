@@ -127,10 +127,6 @@ pub fn set_service_disabled(service_name: &str) -> Result<(), anyhow::Error> {
         SERVICE_NO_CHANGE,
     };
 
-    if service_name.is_empty() {
-        return Err(anyhow::anyhow!("service name must not be empty"));
-    }
-
     /// RAII wrapper for Win32 `SC_HANDLE`. Calls `CloseServiceHandle`
     /// on drop to prevent handle leaks.
     struct ScHandle(windows::Win32::System::Services::SC_HANDLE);
@@ -141,6 +137,10 @@ pub fn set_service_disabled(service_name: &str) -> Result<(), anyhow::Error> {
                 let _ = CloseServiceHandle(self.0);
             }
         }
+    }
+
+    if service_name.is_empty() {
+        return Err(anyhow::anyhow!("service name must not be empty"));
     }
 
     // Step 1: Open the SCM with minimal permissions.
