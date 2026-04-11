@@ -435,7 +435,10 @@ where
     // the mutex is always uncontended here. Per ADR-0022, recover from poison
     // even though a watch::borrow() read path cannot panic in practice; the
     // recovery is a no-op in the steady state.
-    let mut guard = slot.observer.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut guard = slot
+        .observer
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
 
     let result = guard.observe(tick);
     drop(guard);
@@ -637,6 +640,113 @@ mod tests {
     use super::super::lifecycle::ObserverLifecycle;
     use super::super::trait_def::ObserverKind;
     use super::*;
+
+    // ---------------------------------------------------------------
+    // Test helpers: observer implementations shared across ADR-0022 tests.
+    // Defined at module scope to satisfy clippy::items_after_statements.
+    // ---------------------------------------------------------------
+
+    /// Panics on the first invocation (invocation count == 1), succeeds after.
+    struct PanicFirstObserver {
+        count: Arc<AtomicU32>,
+    }
+    impl Observer for PanicFirstObserver {
+        type Output = FirewallStatus;
+        const KIND: ObserverKind = ObserverKind::Synchronous;
+        fn name(&self) -> &'static str {
+            "panic_first"
+        }
+        fn observe(&mut self, _tick: &TickBoundary) -> FirewallStatus {
+            let n = self.count.fetch_add(1, Ordering::SeqCst) + 1;
+            assert!(n != 1, "deliberate first-tick panic");
+            FirewallStatus {
+                domain_profile: Observation::Fresh {
+                    value: ken_protocol::status::FirewallProfileState {
+                        enabled: true,
+                        default_inbound_action: "allow".to_string(),
+                    },
+                    observed_at: OffsetDateTime::now_utc(),
+                },
+                private_profile: Observation::Unobserved,
+                public_profile: Observation::Unobserved,
+            }
+        }
+        fn start(&mut self, _lifecycle: ObserverLifecycle) {}
+    }
+
+    /// Always panics. Increments `count` before each panic.
+    struct AlwaysPanics {
+        count: Arc<AtomicU32>,
+    }
+    impl Observer for AlwaysPanics {
+        type Output = FirewallStatus;
+        const KIND: ObserverKind = ObserverKind::Synchronous;
+        fn name(&self) -> &'static str {
+            "always_panics"
+        }
+        fn observe(&mut self, _tick: &TickBoundary) -> FirewallStatus {
+            self.count.fetch_add(1, Ordering::SeqCst);
+            panic!("always panics");
+        }
+        fn start(&mut self, _lifecycle: ObserverLifecycle) {}
+    }
+
+    /// Panics on the first invocation, succeeds on all subsequent calls.
+    struct PanicsOnce {
+        did_panic: Arc<AtomicBool>,
+    }
+    impl Observer for PanicsOnce {
+        type Output = FirewallStatus;
+        const KIND: ObserverKind = ObserverKind::Synchronous;
+        fn name(&self) -> &'static str {
+            "panics_once"
+        }
+        fn observe(&mut self, _tick: &TickBoundary) -> FirewallStatus {
+            assert!(
+                self.did_panic.swap(true, Ordering::SeqCst),
+                "first and only panic"
+            );
+            FirewallStatus {
+                domain_profile: Observation::Fresh {
+                    value: ken_protocol::status::FirewallProfileState {
+                        enabled: true,
+                        default_inbound_action: "block".to_string(),
+                    },
+                    observed_at: OffsetDateTime::now_utc(),
+                },
+                private_profile: Observation::Unobserved,
+                public_profile: Observation::Unobserved,
+            }
+        }
+        fn start(&mut self, _lifecycle: ObserverLifecycle) {}
+    }
+
+    /// Always succeeds. Increments `count` on each invocation.
+    struct AlwaysSucceeds {
+        count: Arc<AtomicU32>,
+    }
+    impl Observer for AlwaysSucceeds {
+        type Output = FirewallStatus;
+        const KIND: ObserverKind = ObserverKind::Synchronous;
+        fn name(&self) -> &'static str {
+            "always_succeeds"
+        }
+        fn observe(&mut self, _tick: &TickBoundary) -> FirewallStatus {
+            self.count.fetch_add(1, Ordering::SeqCst);
+            FirewallStatus {
+                domain_profile: Observation::Fresh {
+                    value: ken_protocol::status::FirewallProfileState {
+                        enabled: true,
+                        default_inbound_action: "block".to_string(),
+                    },
+                    observed_at: OffsetDateTime::now_utc(),
+                },
+                private_profile: Observation::Unobserved,
+                public_profile: Observation::Unobserved,
+            }
+        }
+        fn start(&mut self, _lifecycle: ObserverLifecycle) {}
+    }
 
     // ---------------------------------------------------------------
     // Existing tests (mechanically adapted to new slot shape)
@@ -990,36 +1100,6 @@ mod tests {
     async fn observer_survives_single_panic() {
         let count = Arc::new(AtomicU32::new(0));
 
-        struct PanicFirstObserver {
-            count: Arc<AtomicU32>,
-        }
-        impl Observer for PanicFirstObserver {
-            type Output = FirewallStatus;
-            const KIND: ObserverKind = ObserverKind::Synchronous;
-            fn name(&self) -> &'static str {
-                "panic_first"
-            }
-            fn observe(&mut self, _tick: &TickBoundary) -> FirewallStatus {
-                let n = self.count.fetch_add(1, Ordering::SeqCst) + 1;
-                if n == 1 {
-                    panic!("deliberate first-tick panic");
-                }
-                // Distinctive return value to confirm a real observation.
-                FirewallStatus {
-                    domain_profile: Observation::Fresh {
-                        value: ken_protocol::status::FirewallProfileState {
-                            enabled: true,
-                            default_inbound_action: "allow".to_string(),
-                        },
-                        observed_at: OffsetDateTime::now_utc(),
-                    },
-                    private_profile: Observation::Unobserved,
-                    public_profile: Observation::Unobserved,
-                }
-            }
-            fn start(&mut self, _lifecycle: ObserverLifecycle) {}
-        }
-
         let mut slot = ObserverSlot::new(PanicFirstObserver {
             count: Arc::clone(&count),
         });
@@ -1059,22 +1139,6 @@ mod tests {
     async fn observer_survives_repeated_panics() {
         let count = Arc::new(AtomicU32::new(0));
 
-        struct AlwaysPanics {
-            count: Arc<AtomicU32>,
-        }
-        impl Observer for AlwaysPanics {
-            type Output = FirewallStatus;
-            const KIND: ObserverKind = ObserverKind::Synchronous;
-            fn name(&self) -> &'static str {
-                "always_panics"
-            }
-            fn observe(&mut self, _tick: &TickBoundary) -> FirewallStatus {
-                self.count.fetch_add(1, Ordering::SeqCst);
-                panic!("always panics");
-            }
-            fn start(&mut self, _lifecycle: ObserverLifecycle) {}
-        }
-
         let mut slot = ObserverSlot::new(AlwaysPanics {
             count: Arc::clone(&count),
         });
@@ -1097,7 +1161,10 @@ mod tests {
         }
 
         // The slot still holds the observer — verify by locking the Arc.
-        let guard = slot.observer.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let guard = slot
+            .observer
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         assert_eq!(
             guard.count.load(Ordering::SeqCst),
             5,
@@ -1110,35 +1177,6 @@ mod tests {
     #[tokio::test]
     async fn mutex_poisoning_is_recovered() {
         let panicked_once = Arc::new(AtomicBool::new(false));
-
-        struct PanicsOnce {
-            did_panic: Arc<AtomicBool>,
-        }
-        impl Observer for PanicsOnce {
-            type Output = FirewallStatus;
-            const KIND: ObserverKind = ObserverKind::Synchronous;
-            fn name(&self) -> &'static str {
-                "panics_once"
-            }
-            fn observe(&mut self, _tick: &TickBoundary) -> FirewallStatus {
-                if !self.did_panic.swap(true, Ordering::SeqCst) {
-                    panic!("first and only panic");
-                }
-                // Successful on all subsequent calls.
-                FirewallStatus {
-                    domain_profile: Observation::Fresh {
-                        value: ken_protocol::status::FirewallProfileState {
-                            enabled: true,
-                            default_inbound_action: "block".to_string(),
-                        },
-                        observed_at: OffsetDateTime::now_utc(),
-                    },
-                    private_profile: Observation::Unobserved,
-                    public_profile: Observation::Unobserved,
-                }
-            }
-            fn start(&mut self, _lifecycle: ObserverLifecycle) {}
-        }
 
         let mut slot = ObserverSlot::new(PanicsOnce {
             did_panic: Arc::clone(&panicked_once),
@@ -1156,13 +1194,10 @@ mod tests {
 
         // Confirm the mutex is poisoned after the panic.
         match slot.observer.try_lock() {
-            Err(std::sync::TryLockError::Poisoned(_)) => {
-                // Expected: the panic poisoned the mutex.
-            }
-            Ok(_) => {
-                // Depending on implementation, the poison may have been cleared.
-                // This is also acceptable — what matters is the next run_observer
-                // call succeeds.
+            Err(std::sync::TryLockError::Poisoned(_)) | Ok(_) => {
+                // Poisoned is expected after the panic; Ok is also acceptable if
+                // the implementation already cleared it. Either way, what matters
+                // is that the next run_observer call succeeds.
             }
             Err(std::sync::TryLockError::WouldBlock) => {
                 panic!("mutex should not be held by another thread between ticks");
@@ -1178,8 +1213,8 @@ mod tests {
         );
     }
 
-    /// ADR-0022 test 4: the first three panics are logged (LogImmediate),
-    /// the fourth and fifth are suppressed (Suppress).
+    /// ADR-0022 test 4: the first three panics are logged (`LogImmediate`),
+    /// the fourth and fifth are suppressed (`Suppress`).
     ///
     /// This test drives `PanicRateLimit::update()` directly rather than
     /// through a tracing subscriber, verifying the rate-limiting decision
@@ -1239,48 +1274,6 @@ mod tests {
         let panic_count = Arc::new(AtomicU32::new(0));
         let success_count = Arc::new(AtomicU32::new(0));
 
-        struct AlwaysPanics {
-            count: Arc<AtomicU32>,
-        }
-        impl Observer for AlwaysPanics {
-            type Output = FirewallStatus;
-            const KIND: ObserverKind = ObserverKind::Synchronous;
-            fn name(&self) -> &'static str {
-                "always_panics"
-            }
-            fn observe(&mut self, _tick: &TickBoundary) -> FirewallStatus {
-                self.count.fetch_add(1, Ordering::SeqCst);
-                panic!("always panics");
-            }
-            fn start(&mut self, _lifecycle: ObserverLifecycle) {}
-        }
-
-        struct AlwaysSucceeds {
-            count: Arc<AtomicU32>,
-        }
-        impl Observer for AlwaysSucceeds {
-            type Output = FirewallStatus;
-            const KIND: ObserverKind = ObserverKind::Synchronous;
-            fn name(&self) -> &'static str {
-                "always_succeeds"
-            }
-            fn observe(&mut self, _tick: &TickBoundary) -> FirewallStatus {
-                self.count.fetch_add(1, Ordering::SeqCst);
-                FirewallStatus {
-                    domain_profile: Observation::Fresh {
-                        value: ken_protocol::status::FirewallProfileState {
-                            enabled: true,
-                            default_inbound_action: "block".to_string(),
-                        },
-                        observed_at: OffsetDateTime::now_utc(),
-                    },
-                    private_profile: Observation::Unobserved,
-                    public_profile: Observation::Unobserved,
-                }
-            }
-            fn start(&mut self, _lifecycle: ObserverLifecycle) {}
-        }
-
         let mut panic_slot = ObserverSlot::new(AlwaysPanics {
             count: Arc::clone(&panic_count),
         });
@@ -1321,7 +1314,10 @@ mod tests {
         }
 
         // Panicking observer's slot is still alive — observer is accessible.
-        let guard = panic_slot.observer.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let guard = panic_slot
+            .observer
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         assert_eq!(
             guard.count.load(Ordering::SeqCst),
             5,
@@ -1334,7 +1330,7 @@ mod tests {
     ///
     /// Uses the test-mode suppression window (50 ms) so no long sleep is
     /// required. The `#[cfg(test)]` constant override is documented in the
-    /// PANIC_LOG_SUPPRESSION_WINDOW declaration.
+    /// `PANIC_LOG_SUPPRESSION_WINDOW` declaration.
     #[test]
     fn rate_limiter_window_expiry_produces_summary() {
         let mut rl = PanicRateLimit::new();
