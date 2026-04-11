@@ -122,8 +122,9 @@ pub fn deactivate(kill_switch_path: &Path) -> Result<(), anyhow::Error> {
 pub fn set_service_disabled(service_name: &str) -> Result<(), anyhow::Error> {
     use windows::core::PCWSTR;
     use windows::Win32::System::Services::{
-        ChangeServiceConfigW, CloseServiceHandle, OpenSCManagerW, OpenServiceW, SC_MANAGER_CONNECT,
-        SERVICE_CHANGE_CONFIG, SERVICE_DISABLED, SERVICE_NO_CHANGE,
+        ChangeServiceConfigW, CloseServiceHandle, OpenSCManagerW, OpenServiceW, ENUM_SERVICE_TYPE,
+        SC_MANAGER_CONNECT, SERVICE_CHANGE_CONFIG, SERVICE_DISABLED, SERVICE_ERROR,
+        SERVICE_NO_CHANGE,
     };
 
     if service_name.is_empty() {
@@ -161,16 +162,16 @@ pub fn set_service_disabled(service_name: &str) -> Result<(), anyhow::Error> {
     unsafe {
         ChangeServiceConfigW(
             service,
-            SERVICE_NO_CHANGE,          // dwServiceType
-            SERVICE_DISABLED,           // dwStartType
-            SERVICE_NO_CHANGE.0.into(), // dwErrorControl
-            PCWSTR::null(),             // lpBinaryPathName
-            PCWSTR::null(),             // lpLoadOrderGroup
-            None,                       // lpdwTagId
-            PCWSTR::null(),             // lpDependencies
-            PCWSTR::null(),             // lpServiceStartName
-            PCWSTR::null(),             // lpPassword
-            PCWSTR::null(),             // lpDisplayName
+            ENUM_SERVICE_TYPE(SERVICE_NO_CHANGE), // dwServiceType
+            SERVICE_DISABLED,                     // dwStartType
+            SERVICE_ERROR(SERVICE_NO_CHANGE),     // dwErrorControl
+            PCWSTR::null(),                       // lpBinaryPathName
+            PCWSTR::null(),                       // lpLoadOrderGroup
+            None,                                 // lpdwTagId
+            PCWSTR::null(),                       // lpDependencies
+            PCWSTR::null(),                       // lpServiceStartName
+            PCWSTR::null(),                       // lpPassword
+            PCWSTR::null(),                       // lpDisplayName
         )
     }
     .map_err(|e| anyhow::anyhow!("ChangeServiceConfigW failed for '{service_name}': {e}"))?;
