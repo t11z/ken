@@ -1,4 +1,4 @@
-# ADR-0021: Observer panic isolation strategy
+# ADR-0022: Observer panic isolation strategy
 
 - **Status:** Accepted
 - **Date:** 2026-04-11
