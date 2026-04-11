@@ -10,6 +10,17 @@
 //! - **Background-refresh** observers do their work in a background
 //!   task spawned through [`ObserverLifecycle`], and their `observe`
 //!   method is a non-blocking cache read.
+//!
+//! Per ADR-0022, the `Observer` trait requires `UnwindSafe` as a
+//! supertrait. This forces every implementor to either be naturally
+//! `UnwindSafe` (the common case for simple structs) or to document
+//! why it is safe to cross an unwind boundary with their internal
+//! state. The worker loop catches panics inside `spawn_blocking`
+//! closures using `std::panic::catch_unwind`; the `UnwindSafe` bound
+//! is the type-level signal that the observer's state is safe to use
+//! after an unwind.
+
+use std::panic::UnwindSafe;
 
 use super::lifecycle::ObserverLifecycle;
 use super::tick::TickBoundary;
@@ -61,7 +72,22 @@ pub enum ObserverKind {
 /// The criterion from ADR-0021: pick `Synchronous` if the observer
 /// can reliably fit inside the per-observer time budget from ADR-0018.
 /// Pick `BackgroundRefresh` if it cannot.
-pub trait Observer: Send + 'static {
+///
+/// # `UnwindSafe` requirement (ADR-0022)
+///
+/// The `UnwindSafe` supertrait requires that every observer's internal
+/// state is safe to use after an unwind. For synchronous observers,
+/// the worker loop wraps each `observe` call in
+/// `std::panic::catch_unwind`; if the call panics, the observer struct
+/// must be in a state that the next call can use without corruption.
+///
+/// For most observers (simple structs, unit structs), `UnwindSafe` is
+/// automatic. Observers that hold types with interior mutability that
+/// crosses an unwind boundary (e.g., `RefCell`, raw pointers) must
+/// wrap the unsafe fields in `std::panic::AssertUnwindSafe` with a
+/// justification comment, or implement `UnwindSafe` explicitly with
+/// a safety argument.
+pub trait Observer: Send + 'static + UnwindSafe {
     /// The subsystem type this observer contributes to the snapshot.
     type Output: Send + 'static;
 

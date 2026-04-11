@@ -93,6 +93,17 @@ impl WindowsUpdateObserver {
     }
 }
 
+// Per ADR-0022, the Observer trait requires UnwindSafe. WindowsUpdateObserver
+// holds tokio watch channels whose internal implementation uses raw pointers
+// in the waiter list, making them !UnwindSafe by default. However, the
+// observer's observe() method only calls watch::Receiver::borrow(), which
+// acquires a read lock atomically. A panic during observe() (which cannot
+// happen in practice for a borrow()) would leave the channels in a consistent
+// state: the read guard is dropped during unwinding, the sender and receiver
+// are intact, and the next call to observe() operates normally. The mutex
+// around the observer in ObserverSlot handles any state-crossing concern.
+impl std::panic::UnwindSafe for WindowsUpdateObserver {}
+
 impl Observer for WindowsUpdateObserver {
     type Output = WindowsUpdateStatus;
     const KIND: ObserverKind = ObserverKind::BackgroundRefresh;
