@@ -49,7 +49,9 @@ Once Ken has its first release, deployment will look roughly like this:
 curl -fsSL https://t11z.github.io/ken/install.sh | sh
 ```
 
-This pulls a Docker Compose file and the Ken server image, generates a root certificate authority for your deployment, and prints a one-time admin URL you use to log in for the first time.
+> **Note:** The `install.sh` installer is not yet available. For the current Docker Compose deployment path, see [`docs/user/install.md`](docs/user/install.md).
+
+This pulls a Docker Compose file and the Ken server image and generates a root certificate authority for your deployment. On first start the server prints a bootstrap password once to the logs. The admin logs in with that password and is immediately prompted to set a permanent password, which is used from then on.
 
 **On each Windows PC:**
 
