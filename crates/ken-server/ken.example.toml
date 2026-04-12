@@ -13,6 +13,11 @@ admin_listen_address = "0.0.0.0:8444"
 # Set this to your server's hostname or IP as seen by the agents.
 public_url = "https://ken.local:8443"
 
+# How the admin UI should be reached from a browser. Used when constructing
+# the enrollment URL shown after creating a new token. Set this to the
+# hostname or IP your browser will use to reach the admin UI.
+admin_public_url = "https://ken.local:8444"
+
 [storage]
 # Root directory for all persistent data.
 data_dir = "/var/lib/ken"

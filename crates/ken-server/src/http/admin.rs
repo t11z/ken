@@ -418,7 +418,8 @@ async fn enroll_submit(
 
     let enroll_url = format!(
         "{}/enroll/{}",
-        state.config.server.admin_listen_address, token_value
+        state.config.server.admin_public_url.trim_end_matches('/'),
+        token_value
     );
     let lifetime_min = state.config.enrollment.token_lifetime_seconds / 60;
 

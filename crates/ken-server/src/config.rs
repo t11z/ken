@@ -49,6 +49,15 @@ pub struct ServerConfig {
     /// How agents should reach this server (used in enrollment responses).
     #[serde(default = "default_public_url")]
     pub public_url: String,
+
+    /// How the admin UI (and enrollment URLs) should be reached from a browser.
+    ///
+    /// This is the public base URL of the admin listener. It is used when
+    /// constructing the enrollment URL shown to the operator after creating a
+    /// new enrollment token. Set this to the hostname or IP the operator's
+    /// browser will use to reach the admin UI, e.g. `https://ken.local:8444`.
+    #[serde(default = "default_admin_public_url")]
+    pub admin_public_url: String,
 }
 
 impl Default for ServerConfig {
@@ -57,6 +66,7 @@ impl Default for ServerConfig {
             agent_listen_address: default_agent_listen(),
             admin_listen_address: default_admin_listen(),
             public_url: default_public_url(),
+            admin_public_url: default_admin_public_url(),
         }
     }
 }
@@ -71,6 +81,10 @@ fn default_admin_listen() -> SocketAddr {
 
 fn default_public_url() -> String {
     "https://localhost:8443".to_string()
+}
+
+fn default_admin_public_url() -> String {
+    "https://localhost:8444".to_string()
 }
 
 /// Storage configuration.
@@ -288,6 +302,7 @@ impl Config {
             agent_listen = %self.server.agent_listen_address,
             admin_listen = %self.server.admin_listen_address,
             public_url = %self.server.public_url,
+            admin_public_url = %self.server.admin_public_url,
             data_dir = %self.storage.data_dir.display(),
             ca_cert = %tls.ca_certificate_path.display(),
             ca_key = %tls.ca_key_path.display(),
