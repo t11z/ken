@@ -6,7 +6,7 @@
 #   2. Create /etc/ken/ken.toml (see ken.example.toml)
 #   3. Create /var/lib/ken/ for data storage
 #   4. Run: docker compose up -d
-#   5. Check logs for the admin access token: docker compose logs ken-server
+#   5. Check logs for the bootstrap password: docker compose logs ken-server
 
 services:
   ken-server:
