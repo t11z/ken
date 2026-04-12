@@ -18,11 +18,11 @@ pub mod enrollment;
 pub mod tls;
 
 use axum::body::Body;
+use axum::http::{header, StatusCode};
 use axum::middleware;
 use axum::response::Response;
 use axum::routing::get;
 use axum::Router;
-use http::{header, StatusCode};
 use tower_http::trace::TraceLayer;
 
 use crate::state::AppState;
@@ -33,7 +33,10 @@ static TAILWIND_CSS: &[u8] = include_bytes!("../../static/tailwind.css");
 async fn serve_htmx() -> Response {
     Response::builder()
         .status(StatusCode::OK)
-        .header(header::CONTENT_TYPE, "application/javascript; charset=utf-8")
+        .header(
+            header::CONTENT_TYPE,
+            "application/javascript; charset=utf-8",
+        )
         .body(Body::from(HTMX_JS))
         .unwrap()
 }
