@@ -71,7 +71,7 @@ After confirmation:
 gh issue create \
   --title "[title from $ARGUMENTS]" \
   --body "[composed body]" \
-  --label "[implementation-gap|drift|new-feature|bug|hardening]"
+  --label "[labels as per .github/labels.yml]"
 ```
 
 Output the issue URL.
