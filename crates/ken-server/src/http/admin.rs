@@ -1,8 +1,13 @@
 //! Admin web UI routes and handlers.
 //!
-//! The admin UI runs on the admin listener (default port 8444) and
-//! is protected by token-based session authentication. All HTML is
-//! rendered via askama templates per ADR-0013.
+//! The admin UI runs on the admin listener (default port 8444) and is
+//! protected by session authentication per ADR-0024. All HTML is rendered via
+//! askama templates per ADR-0013.
+//!
+//! ADR-0024 introduces a two-stage authentication model. Sessions created from
+//! a bootstrap login carry `stage = "bootstrap"` and may only access the
+//! set-password handler. All other handlers require a `stage = "full"` session
+//! via the [`AuthenticatedFullAdmin`] extractor.
 
 use askama::Template;
 use axum::extract::{Form, Path, State};
@@ -22,7 +27,7 @@ use crate::error::AppError;
 use crate::state::AppState;
 use crate::storage::{Endpoint, EnrollmentToken, StoredAuditEvent};
 
-use super::auth::{self, AuthenticatedAdmin, SESSION_COOKIE};
+use super::auth::{self, AuthenticatedAdmin, AuthenticatedFullAdmin, LoginResult, SESSION_COOKIE};
 
 /// Admin routes.
 pub fn routes() -> Router<AppState> {
@@ -30,6 +35,8 @@ pub fn routes() -> Router<AppState> {
         .route("/admin/login", get(login_page))
         .route("/admin/login", post(login_submit))
         .route("/admin/logout", post(logout))
+        .route("/admin/set-password", get(set_password_page))
+        .route("/admin/set-password", post(set_password_submit))
         .route("/admin", get(dashboard))
         .route("/admin/endpoints/partial", get(endpoints_partial))
         .route("/admin/endpoints/{id}", get(endpoint_detail))
@@ -46,6 +53,14 @@ pub fn routes() -> Router<AppState> {
 #[derive(Template)]
 #[template(path = "login.html")]
 struct LoginTemplate {
+    error: Option<String>,
+}
+
+/// Set-password page template (ADR-0024 Stage 1 → Stage 2 transition).
+#[derive(Template)]
+#[template(path = "set_password.html")]
+struct SetPasswordTemplate {
+    csrf_token: String,
     error: Option<String>,
 }
 
@@ -134,12 +149,31 @@ async fn login_page() -> Result<Html<String>, AppError> {
 
 #[derive(Deserialize)]
 struct LoginForm {
-    token: String,
+    password: String,
 }
 
 async fn login_submit(State(state): State<AppState>, Form(form): Form<LoginForm>) -> Response {
-    match auth::verify_token(&state, &form.token).await {
-        Ok(true) => match auth::create_session(&state).await {
+    let Ok(result) = auth::verify_login(&state.storage, &form.password).await else {
+        return render_login_error("Internal error");
+    };
+
+    match result {
+        LoginResult::Invalid => render_login_error("Invalid password"),
+        LoginResult::BootstrapAccepted => {
+            match auth::create_session(&state.storage, "bootstrap").await {
+                Ok((session_id, _csrf)) => {
+                    let cookie =
+                        format!("{SESSION_COOKIE}={session_id}; HttpOnly; SameSite=Strict; Path=/");
+                    let mut response = Redirect::to("/admin/set-password").into_response();
+                    response
+                        .headers_mut()
+                        .insert(SET_COOKIE, cookie.parse().unwrap());
+                    response
+                }
+                Err(_) => render_login_error("Internal error"),
+            }
+        }
+        LoginResult::UserAccepted => match auth::create_session(&state.storage, "full").await {
             Ok((session_id, _csrf)) => {
                 let cookie =
                     format!("{SESSION_COOKIE}={session_id}; HttpOnly; SameSite=Strict; Path=/");
@@ -151,8 +185,6 @@ async fn login_submit(State(state): State<AppState>, Form(form): Form<LoginForm>
             }
             Err(_) => render_login_error("Internal error"),
         },
-        Ok(false) => render_login_error("Invalid access token"),
-        Err(_) => render_login_error("Internal error"),
     }
 }
 
@@ -181,9 +213,97 @@ async fn logout(State(state): State<AppState>, admin: AuthenticatedAdmin) -> Res
     response
 }
 
-async fn dashboard(
+/// GET /admin/set-password — ADR-0024 Stage 1 → Stage 2 transition.
+///
+/// Accessible to both bootstrap and full-stage sessions so that the page
+/// renders correctly after a bootstrap login.
+async fn set_password_page(admin: AuthenticatedAdmin) -> Result<Html<String>, AppError> {
+    let template = SetPasswordTemplate {
+        csrf_token: admin.csrf_token,
+        error: None,
+    };
+    Ok(Html(template.render().map_err(|e| {
+        AppError::Internal(format!("template render error: {e}"))
+    })?))
+}
+
+#[derive(Deserialize)]
+struct SetPasswordForm {
+    new_password: String,
+    confirm_password: String,
+    csrf_token: String,
+}
+
+/// POST /admin/set-password — commit the permanent password (ADR-0024).
+///
+/// Validates the form, stores `admin_user_password_hash`, deletes
+/// `admin_bootstrap_password_hash`, invalidates all sessions, then redirects
+/// to `/admin/login` so the admin logs in with the new password.
+async fn set_password_submit(
     State(state): State<AppState>,
     admin: AuthenticatedAdmin,
+    Form(form): Form<SetPasswordForm>,
+) -> Response {
+    if form.csrf_token != admin.csrf_token {
+        return render_set_password_error("Invalid request", &admin.csrf_token);
+    }
+
+    if form.new_password != form.confirm_password {
+        return render_set_password_error("Passwords do not match", &admin.csrf_token);
+    }
+
+    if form.new_password.len() < 12 {
+        return render_set_password_error(
+            "Password must be at least 12 characters",
+            &admin.csrf_token,
+        );
+    }
+
+    let Ok(hash) = auth::hash_password(&form.new_password) else {
+        return render_set_password_error("Internal error", &admin.csrf_token);
+    };
+
+    // Store the user password hash first — this is the commit point.
+    if state
+        .storage
+        .set_admin_secret(auth::USER_HASH_KEY, &hash)
+        .await
+        .is_err()
+    {
+        return render_set_password_error("Internal error", &admin.csrf_token);
+    }
+
+    // Delete the bootstrap hash and all sessions.  Failures here are
+    // non-fatal: the user hash is already set, so verify_login will
+    // only check it regardless.
+    let _ = state
+        .storage
+        .delete_admin_secret(auth::BOOTSTRAP_HASH_KEY)
+        .await;
+    let _ = state.storage.delete_all_admin_sessions().await;
+
+    Redirect::to("/admin/login").into_response()
+}
+
+/// Render the set-password page with an error message.
+fn render_set_password_error(msg: &str, csrf_token: &str) -> Response {
+    let template = SetPasswordTemplate {
+        csrf_token: csrf_token.to_string(),
+        error: Some(msg.to_string()),
+    };
+    match template.render() {
+        Ok(html) => Html(html).into_response(),
+        Err(_) => (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            "template error",
+        )
+            .into_response(),
+    }
+}
+
+async fn dashboard(
+    State(state): State<AppState>,
+    admin: AuthenticatedFullAdmin,
 ) -> Result<Html<String>, AppError> {
     let endpoints = state.storage.list_endpoints().await?;
 
@@ -200,7 +320,7 @@ async fn dashboard(
 /// htmx partial: returns just the endpoint rows for polling refresh.
 async fn endpoints_partial(
     State(state): State<AppState>,
-    _admin: AuthenticatedAdmin,
+    _admin: AuthenticatedFullAdmin,
 ) -> Result<Html<String>, AppError> {
     let endpoints = state.storage.list_endpoints().await?;
 
@@ -218,7 +338,7 @@ async fn endpoints_partial(
 
 async fn endpoint_detail(
     State(state): State<AppState>,
-    admin: AuthenticatedAdmin,
+    admin: AuthenticatedFullAdmin,
     Path(id): Path<String>,
 ) -> Result<Html<String>, AppError> {
     let endpoint_id =
@@ -259,7 +379,7 @@ async fn endpoint_detail(
     })?))
 }
 
-async fn enroll_form(admin: AuthenticatedAdmin) -> Result<Html<String>, AppError> {
+async fn enroll_form(admin: AuthenticatedFullAdmin) -> Result<Html<String>, AppError> {
     let template = EnrollTemplate {
         csrf_token: admin.csrf_token,
         enrollment: None,
@@ -277,7 +397,7 @@ struct EnrollForm {
 
 async fn enroll_submit(
     State(state): State<AppState>,
-    admin: AuthenticatedAdmin,
+    admin: AuthenticatedFullAdmin,
     Form(form): Form<EnrollForm>,
 ) -> Result<Html<String>, AppError> {
     let token_value = Uuid::new_v4().to_string();
@@ -318,7 +438,7 @@ async fn enroll_submit(
 
 async fn audit_log(
     State(state): State<AppState>,
-    admin: AuthenticatedAdmin,
+    admin: AuthenticatedFullAdmin,
 ) -> Result<Html<String>, AppError> {
     let events = state.storage.recent_audit_events(100).await?;
 
@@ -333,7 +453,7 @@ async fn audit_log(
 }
 
 async fn command_form(
-    admin: AuthenticatedAdmin,
+    admin: AuthenticatedFullAdmin,
     Path(endpoint_id): Path<String>,
 ) -> Result<Html<String>, AppError> {
     let template = CommandFormTemplate {
@@ -353,7 +473,7 @@ struct CommandForm {
 
 async fn command_submit(
     State(state): State<AppState>,
-    admin: AuthenticatedAdmin,
+    admin: AuthenticatedFullAdmin,
     Path(endpoint_id_str): Path<String>,
     Form(form): Form<CommandForm>,
 ) -> Result<Html<String>, AppError> {

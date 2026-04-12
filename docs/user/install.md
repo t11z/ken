@@ -30,15 +30,13 @@
    docker compose up -d
    ```
 
-5. On first startup, the server generates an admin access token and logs it. Retrieve it:
+5. On first startup, the server generates a bootstrap password and prints it to the logs. Retrieve it:
 
    ```bash
-   docker compose logs ken-server | grep "ADMIN ACCESS TOKEN"
+   docker compose logs ken-server | grep 'BOOTSTRAP PASSWORD'
    ```
 
-   Save this token — it is shown only once.
-
-6. Open `http://<your-server-ip>:8444/admin/login` and log in with the token.
+6. Open `https://<your-server-ip>:8444/admin/login` and log in with the bootstrap password. You will be prompted to set a permanent password immediately. All subsequent logins use that password.
 
 ## Agent (Windows PC)
 
@@ -71,3 +69,13 @@
 ### Verifying
 
 Run `ken-agent.exe status` to check enrollment state and service health.
+
+## Recovery
+
+If you lose access to your admin password, run:
+
+```bash
+docker compose run --rm ken-server admin reset-password
+```
+
+A new bootstrap password is printed to the logs, and all active admin sessions are invalidated. Log in with the bootstrap password and set a new permanent password.
