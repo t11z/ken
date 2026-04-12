@@ -340,19 +340,6 @@ impl Storage {
             .collect())
     }
 
-    /// Check if an endpoint exists and is not revoked.
-    // TODO: remove with cleanup issue — the verifier reads the full
-    // Endpoint record via get_endpoint rather than using this helper.
-    pub async fn is_endpoint_active(&self, id: &str) -> Result<bool, AppError> {
-        let row = sqlx::query_as::<_, (i32,)>(
-            "SELECT COUNT(*) FROM endpoints WHERE id = ? AND revoked_at IS NULL",
-        )
-        .bind(id)
-        .fetch_one(&self.pool)
-        .await?;
-        Ok(row.0 > 0)
-    }
-
     // --- Heartbeats ---
 
     /// Record a heartbeat and update the endpoint's last-seen timestamp.
