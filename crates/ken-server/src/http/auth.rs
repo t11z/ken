@@ -16,7 +16,7 @@ use argon2::{
     password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Argon2,
 };
-use axum::extract::FromRequestParts;
+use axum::extract::{FromRef, FromRequestParts};
 use axum::http::request::Parts;
 use axum::response::{IntoResponse, Redirect, Response};
 use rand_core::{OsRng, RngCore};
@@ -144,21 +144,6 @@ where
             session_id: admin.session_id,
             csrf_token: admin.csrf_token,
         })
-    }
-}
-
-/// Trait for extracting `AppState` from a state container.
-///
-/// Allows the session extractors to work with `AppState` directly and also
-/// with any outer state type that wraps it.
-pub trait FromRef<T> {
-    /// Extract `Self` from a reference to `T`.
-    fn from_ref(input: &T) -> Self;
-}
-
-impl FromRef<AppState> for AppState {
-    fn from_ref(input: &AppState) -> Self {
-        input.clone()
     }
 }
 
