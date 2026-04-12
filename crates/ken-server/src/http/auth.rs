@@ -16,10 +16,10 @@ use argon2::{
     password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Argon2,
 };
-use rand_core::{OsRng, RngCore};
 use axum::extract::FromRequestParts;
 use axum::http::request::Parts;
 use axum::response::{IntoResponse, Redirect, Response};
+use rand_core::{OsRng, RngCore};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
@@ -359,16 +359,13 @@ mod tests {
 
     #[test]
     fn generate_password_length_and_charset() {
-        let pw = generate_password();
-        assert_eq!(pw.len(), 24);
-        // Every character must be in the allowed set
         const CHARSET: &[u8] =
             b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*";
-        for c in pw.chars() {
-            assert!(
-                CHARSET.contains(&(c as u8)),
-                "unexpected char in password: {c}"
-            );
+        let pw = generate_password();
+        assert_eq!(pw.len(), 24);
+        // Every byte must be in the allowed set
+        for byte in pw.bytes() {
+            assert!(CHARSET.contains(&byte), "unexpected byte in password: {byte}");
         }
     }
 }

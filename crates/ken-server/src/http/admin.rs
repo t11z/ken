@@ -153,9 +153,8 @@ struct LoginForm {
 }
 
 async fn login_submit(State(state): State<AppState>, Form(form): Form<LoginForm>) -> Response {
-    let result = match auth::verify_login(&state.storage, &form.password).await {
-        Ok(r) => r,
-        Err(_) => return render_login_error("Internal error"),
+    let Ok(result) = auth::verify_login(&state.storage, &form.password).await else {
+        return render_login_error("Internal error");
     };
 
     match result {
@@ -175,21 +174,19 @@ async fn login_submit(State(state): State<AppState>, Form(form): Form<LoginForm>
                 Err(_) => render_login_error("Internal error"),
             }
         }
-        LoginResult::UserAccepted => {
-            match auth::create_session(&state.storage, "full").await {
-                Ok((session_id, _csrf)) => {
-                    let cookie = format!(
-                        "{SESSION_COOKIE}={session_id}; HttpOnly; SameSite=Strict; Path=/"
-                    );
-                    let mut response = Redirect::to("/admin").into_response();
-                    response
-                        .headers_mut()
-                        .insert(SET_COOKIE, cookie.parse().unwrap());
-                    response
-                }
-                Err(_) => render_login_error("Internal error"),
+        LoginResult::UserAccepted => match auth::create_session(&state.storage, "full").await {
+            Ok((session_id, _csrf)) => {
+                let cookie = format!(
+                    "{SESSION_COOKIE}={session_id}; HttpOnly; SameSite=Strict; Path=/"
+                );
+                let mut response = Redirect::to("/admin").into_response();
+                response
+                    .headers_mut()
+                    .insert(SET_COOKIE, cookie.parse().unwrap());
+                response
             }
-        }
+            Err(_) => render_login_error("Internal error"),
+        },
     }
 }
 
@@ -264,9 +261,8 @@ async fn set_password_submit(
         );
     }
 
-    let hash = match auth::hash_password(&form.new_password) {
-        Ok(h) => h,
-        Err(_) => return render_set_password_error("Internal error", &admin.csrf_token),
+    let Ok(hash) = auth::hash_password(&form.new_password) else {
+        return render_set_password_error("Internal error", &admin.csrf_token);
     };
 
     // Store the user password hash first — this is the commit point.
