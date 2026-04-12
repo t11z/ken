@@ -17,7 +17,6 @@ RUN cargo build --release -p ken-server
 FROM gcr.io/distroless/cc-debian12
 
 COPY --from=builder /build/target/release/ken-server /usr/local/bin/ken-server
-COPY --from=builder /build/crates/ken-server/static /usr/local/share/ken/static
 
 EXPOSE 8443 8444
 
