@@ -30,14 +30,48 @@ jobs:
         id: build
         shell: pwsh
         run: |
-          # The WiX source and build invocation are defined in
-          # crates/ken-agent/installer/. This step is a placeholder for
-          # the actual MSI build, which will be wired up by a dedicated
-          # prompt once the agent has a first release candidate.
-          echo "msi-path=crates/ken-agent/installer/target/ken-agent.msi" >> $env:GITHUB_OUTPUT
-          # For now, emit a marker file so the workflow has a real artifact.
-          New-Item -ItemType Directory -Force -Path crates/ken-agent/installer/target | Out-Null
-          Set-Content crates/ken-agent/installer/target/ken-agent.msi -Value "placeholder - implement MSI build"
+          $version = "${{ github.ref_name }}".TrimStart("v")
+          $agentBin = (Resolve-Path "target\release\ken-agent.exe").Path
+          $outDir   = "crates\ken-agent\installer\target"
+          $msiPath  = "$outDir\ken-agent.msi"
+          New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+
+          wix build `
+            "crates/ken-agent/installer/ken-agent.wxs" `
+            -out $msiPath `
+            -d Version=$version `
+            -d AgentBin=$agentBin `
+            -arch x64
+
+          Write-Output "msi-path=$msiPath" >> $env:GITHUB_OUTPUT
+
+      # Phase 1 uses a self-signed certificate (ADR-0011 §Consequences).
+      # The signing step is present so the Authenticode verification path
+      # in the agent (WinVerifyTrust, ADR-0011 step 4) is exercisable
+      # against a real signature. OV/EV certificate is Phase 2 work.
+      - name: sign MSI (Phase 1 — self-signed)
+        shell: pwsh
+        run: |
+          $cert = New-SelfSignedCertificate `
+            -Subject "CN=Ken Project (Phase 1 self-signed)" `
+            -Type CodeSigningCert `
+            -CertStoreLocation Cert:\LocalMachine\My `
+            -NotAfter (Get-Date).AddYears(2)
+
+          $signtool = Get-ChildItem `
+            "${env:ProgramFiles(x86)}\Windows Kits\10\bin" `
+            -Filter signtool.exe -Recurse |
+            Where-Object { $_.FullName -match "\\x64\\" } |
+            Sort-Object FullName |
+            Select-Object -Last 1
+
+          if (-not $signtool) { throw "signtool.exe not found in Windows Kits" }
+
+          & $signtool.FullName sign `
+            /sha1 $cert.Thumbprint `
+            /fd SHA256 `
+            /d "Ken Agent" `
+            "crates\ken-agent\installer\target\ken-agent.msi"
 
       - name: upload MSI artifact
         uses: actions/upload-artifact@v4
