@@ -611,13 +611,15 @@ impl Storage {
         .fetch_optional(&self.pool)
         .await?;
 
-        Ok(row.map(|(id, created_at, expires_at, csrf_token, stage)| AdminSession {
-            id,
-            created_at,
-            expires_at,
-            csrf_token,
-            stage,
-        }))
+        Ok(row.map(
+            |(id, created_at, expires_at, csrf_token, stage)| AdminSession {
+                id,
+                created_at,
+                expires_at,
+                csrf_token,
+                stage,
+            },
+        ))
     }
 
     /// Delete a single admin session by ID.

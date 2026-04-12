@@ -13,12 +13,10 @@
 //!    All subsequent logins use the user hash and receive full-access sessions.
 
 use argon2::{
-    password_hash::{
-        rand_core::{OsRng, RngCore},
-        PasswordHash, PasswordHasher, PasswordVerifier, SaltString,
-    },
+    password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Argon2,
 };
+use rand_core::{OsRng, RngCore};
 use axum::extract::FromRequestParts;
 use axum::http::request::Parts;
 use axum::response::{IntoResponse, Redirect, Response};
