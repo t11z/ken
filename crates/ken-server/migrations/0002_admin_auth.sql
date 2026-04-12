@@ -1,0 +1,25 @@
+-- ADR-0024: Admin authentication via bootstrap password and user-chosen password.
+--
+-- The admin_secrets table stores password hashes under two keys:
+--
+--   admin_bootstrap_password_hash
+--     Present only while the bootstrap password is active. Deleted atomically
+--     when the user sets their permanent password. Its presence means the admin
+--     has not yet completed first login.
+--
+--   admin_user_password_hash
+--     Present after the user has set a permanent password. Its presence is the
+--     signal that Stage 2 is complete and the bootstrap password is gone.
+--
+-- Exactly one of these two keys must be present at any time after first
+-- startup. The admin_secrets table already supports this key-value convention;
+-- no new tables are required.
+--
+-- Add a stage column to admin_sessions to distinguish sessions created from a
+-- bootstrap login (which may only access /admin/set-password) from sessions
+-- created from a user-password login (which have full access).
+--
+--   'bootstrap' -- created from a bootstrap login; restricted to set-password.
+--   'full'      -- created from a user-password login; full access.
+
+ALTER TABLE admin_sessions ADD COLUMN stage TEXT NOT NULL DEFAULT 'full';

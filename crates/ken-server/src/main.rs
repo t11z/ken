@@ -4,6 +4,13 @@
 //! Raspberry Pi) and accepts heartbeats from enrolled Ken agents
 //! over mTLS. It provides an admin web UI for monitoring endpoint
 //! health and issuing commands.
+//!
+//! ## Subcommands
+//!
+//! - `ken-server [--config PATH]` — run the server normally.
+//! - `ken-server admin reset-password [--config PATH]` — reset the admin
+//!   password: deletes both password hashes and all sessions, regenerates
+//!   the bootstrap password, prints it to the log, then exits. ADR-0024.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -36,9 +43,17 @@ fn init_tracing(logging: &ken_server::config::LoggingConfig) {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // Parse CLI args for --config
-    let config_path = parse_config_path();
+    let args: Vec<String> = std::env::args().collect();
 
+    // Dispatch subcommand: ken-server admin reset-password [--config PATH]
+    if args.get(1).map(String::as_str) == Some("admin")
+        && args.get(2).map(String::as_str) == Some("reset-password")
+    {
+        return admin_reset_password().await;
+    }
+
+    // No subcommand — run the server normally.
+    let config_path = parse_config_path();
     let config = Config::load(config_path.as_deref())?;
     init_tracing(&config.logging);
     config.log_summary();
@@ -58,8 +73,8 @@ async fn main() -> anyhow::Result<()> {
         config: Arc::new(config),
     };
 
-    // Ensure admin access token exists (generates and logs it on first run)
-    http::auth::ensure_admin_token(&state).await?;
+    // Ensure the bootstrap password exists (generates and logs it on first run).
+    http::auth::ensure_admin_bootstrap(&state.storage).await?;
 
     // Build routers
     let admin_app = http::admin_router(state.clone());
@@ -120,7 +135,41 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Execute `ken-server admin reset-password`.
+///
+/// Loads config, connects to storage, removes both password hashes and all
+/// active sessions, then calls [`ensure_admin_bootstrap`] to generate a new
+/// bootstrap password and log it. Exits after completion without starting the
+/// server. ADR-0024.
+///
+/// [`ensure_admin_bootstrap`]: http::auth::ensure_admin_bootstrap
+async fn admin_reset_password() -> anyhow::Result<()> {
+    let config_path = parse_config_path();
+    let config = Config::load(config_path.as_deref())?;
+    init_tracing(&config.logging);
+
+    let storage = Storage::connect(&config.storage).await?;
+    storage.migrate().await?;
+
+    storage
+        .delete_admin_secret(http::auth::BOOTSTRAP_HASH_KEY)
+        .await?;
+    storage
+        .delete_admin_secret(http::auth::USER_HASH_KEY)
+        .await?;
+    storage.delete_all_admin_sessions().await?;
+
+    http::auth::ensure_admin_bootstrap(&storage).await?;
+
+    tracing::info!("admin password reset complete — log in with the bootstrap password above");
+
+    Ok(())
+}
+
 /// Simple CLI argument parsing for the `--config` flag.
+///
+/// Works for both `ken-server --config PATH` and
+/// `ken-server admin reset-password --config PATH` because it scans all args.
 fn parse_config_path() -> Option<PathBuf> {
     let args: Vec<String> = std::env::args().collect();
     for (i, arg) in args.iter().enumerate() {

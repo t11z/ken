@@ -74,12 +74,17 @@ pub struct StoredAuditEvent {
 }
 
 /// An admin session as stored in the database.
+///
+/// The `stage` field distinguishes bootstrap sessions (ADR-0024 Stage 1,
+/// restricted to `/admin/set-password`) from full sessions (Stage 2).
 #[derive(Debug, Clone)]
 pub struct AdminSession {
     pub id: String,
     pub created_at: String,
     pub expires_at: String,
     pub csrf_token: String,
+    /// Session stage: `"bootstrap"` or `"full"`. See ADR-0024.
+    pub stage: String,
 }
 
 impl Storage {
@@ -579,15 +584,18 @@ impl Storage {
     // --- Admin sessions ---
 
     /// Create a new admin session.
+    ///
+    /// The `stage` field must be `"bootstrap"` or `"full"` per ADR-0024.
     pub async fn create_admin_session(&self, session: &AdminSession) -> Result<(), AppError> {
         sqlx::query(
-            "INSERT INTO admin_sessions (id, created_at, expires_at, csrf_token) \
-             VALUES (?, ?, ?, ?)",
+            "INSERT INTO admin_sessions (id, created_at, expires_at, csrf_token, stage) \
+             VALUES (?, ?, ?, ?, ?)",
         )
         .bind(&session.id)
         .bind(&session.created_at)
         .bind(&session.expires_at)
         .bind(&session.csrf_token)
+        .bind(&session.stage)
         .execute(&self.pool)
         .await?;
         Ok(())
@@ -595,27 +603,38 @@ impl Storage {
 
     /// Look up an admin session by ID.
     pub async fn get_admin_session(&self, id: &str) -> Result<Option<AdminSession>, AppError> {
-        let row = sqlx::query_as::<_, (String, String, String, String)>(
-            "SELECT id, created_at, expires_at, csrf_token FROM admin_sessions WHERE id = ?",
+        let row = sqlx::query_as::<_, (String, String, String, String, String)>(
+            "SELECT id, created_at, expires_at, csrf_token, stage \
+             FROM admin_sessions WHERE id = ?",
         )
         .bind(id)
         .fetch_optional(&self.pool)
         .await?;
 
-        Ok(
-            row.map(|(id, created_at, expires_at, csrf_token)| AdminSession {
-                id,
-                created_at,
-                expires_at,
-                csrf_token,
-            }),
-        )
+        Ok(row.map(|(id, created_at, expires_at, csrf_token, stage)| AdminSession {
+            id,
+            created_at,
+            expires_at,
+            csrf_token,
+            stage,
+        }))
     }
 
-    /// Delete an admin session.
+    /// Delete a single admin session by ID.
     pub async fn delete_admin_session(&self, id: &str) -> Result<(), AppError> {
         sqlx::query("DELETE FROM admin_sessions WHERE id = ?")
             .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// Delete all admin sessions, e.g. after a password reset.
+    ///
+    /// Called by `ken-server admin reset-password` and by the set-password
+    /// handler after the user sets their permanent password (ADR-0024).
+    pub async fn delete_all_admin_sessions(&self) -> Result<(), AppError> {
+        sqlx::query("DELETE FROM admin_sessions")
             .execute(&self.pool)
             .await?;
         Ok(())
@@ -632,7 +651,7 @@ impl Storage {
         Ok(row.map(|(v,)| v))
     }
 
-    /// Set an admin secret.
+    /// Set an admin secret, inserting or replacing the existing value.
     pub async fn set_admin_secret(&self, key: &str, value: &str) -> Result<(), AppError> {
         sqlx::query(
             "INSERT INTO admin_secrets (key, value) VALUES (?, ?) \
@@ -642,6 +661,18 @@ impl Storage {
         .bind(value)
         .execute(&self.pool)
         .await?;
+        Ok(())
+    }
+
+    /// Delete an admin secret by key. No-op if the key does not exist.
+    ///
+    /// Used by the set-password flow to atomically remove the bootstrap
+    /// password hash once the user password hash has been stored (ADR-0024).
+    pub async fn delete_admin_secret(&self, key: &str) -> Result<(), AppError> {
+        sqlx::query("DELETE FROM admin_secrets WHERE key = ?")
+            .bind(key)
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 }
