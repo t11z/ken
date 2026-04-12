@@ -92,13 +92,18 @@ impl Storage {
     ///
     /// # Errors
     ///
-    /// Returns an error if the connection cannot be established.
+    /// Returns an error if the data directory cannot be created or if the
+    /// database file cannot be opened (e.g. a permissions problem on the
+    /// mounted volume).
     pub async fn connect(config: &StorageConfig) -> Result<Self, AppError> {
         let db_path = config.data_dir.join("ken.db");
 
-        if let Some(parent) = db_path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
+        std::fs::create_dir_all(&config.data_dir).map_err(|e| {
+            AppError::Internal(format!(
+                "failed to create data directory '{}': {e}",
+                config.data_dir.display()
+            ))
+        })?;
 
         let options = SqliteConnectOptions::new()
             .filename(&db_path)
@@ -109,7 +114,17 @@ impl Storage {
         let pool = SqlitePoolOptions::new()
             .max_connections(5)
             .connect_with(options)
-            .await?;
+            .await
+            .map_err(|e| {
+                AppError::Internal(format!(
+                    "failed to open database at '{}': {e}\n\
+                     Hint: ensure the data directory is writable by the server \
+                     process. When using a bind mount, the host directory must \
+                     be writable by the container user (uid 0 for the default \
+                     image). Using a Docker named volume avoids this entirely.",
+                    db_path.display()
+                ))
+            })?;
 
         tracing::info!(path = %db_path.display(), "connected to SQLite database");
         Ok(Self { pool })

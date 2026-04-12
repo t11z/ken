@@ -4,9 +4,20 @@
 # Usage:
 #   1. Copy this file to docker-compose.yml
 #   2. Create /etc/ken/ken.toml (see ken.example.toml)
-#   3. Create /var/lib/ken/ for data storage
-#   4. Run: docker compose up -d
-#   5. Check logs for the bootstrap password: docker compose logs ken-server
+#   3. Run: docker compose up -d
+#   4. Check logs for the bootstrap password: docker compose logs ken-server
+#
+# Data storage: this file uses a Docker named volume (ken-data) for
+# /var/lib/ken. Docker creates and manages the volume automatically —
+# no manual directory creation or permission setup is required.
+#
+# If you prefer a bind mount (e.g. to back up data at a known host path),
+# replace the named volume with a host path:
+#
+#   volumes:
+#     - /var/lib/ken:/var/lib/ken   # host path — must be writable by uid 0
+#
+# and remove the top-level `volumes:` section at the bottom of this file.
 
 services:
   ken-server:
@@ -19,9 +30,13 @@ services:
       # Admin UI and enrollment
       - "8444:8444"
     volumes:
-      # Configuration
+      # Configuration (bind mount — read-only)
       - /etc/ken:/etc/ken:ro
-      # Persistent data (SQLite, CA keys, certificates)
-      - /var/lib/ken:/var/lib/ken
+      # Persistent data (SQLite, CA keys, certificates).
+      # Named volume: Docker manages creation and permissions automatically.
+      - ken-data:/var/lib/ken
     environment:
       KEN_CONFIG: /etc/ken/ken.toml
+
+volumes:
+  ken-data:
