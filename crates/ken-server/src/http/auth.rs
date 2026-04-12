@@ -365,7 +365,10 @@ mod tests {
         assert_eq!(pw.len(), 24);
         // Every byte must be in the allowed set
         for byte in pw.bytes() {
-            assert!(CHARSET.contains(&byte), "unexpected byte in password: {byte}");
+            assert!(
+                CHARSET.contains(&byte),
+                "unexpected byte in password: {byte}"
+            );
         }
     }
 }

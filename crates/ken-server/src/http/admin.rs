@@ -162,9 +162,8 @@ async fn login_submit(State(state): State<AppState>, Form(form): Form<LoginForm>
         LoginResult::BootstrapAccepted => {
             match auth::create_session(&state.storage, "bootstrap").await {
                 Ok((session_id, _csrf)) => {
-                    let cookie = format!(
-                        "{SESSION_COOKIE}={session_id}; HttpOnly; SameSite=Strict; Path=/"
-                    );
+                    let cookie =
+                        format!("{SESSION_COOKIE}={session_id}; HttpOnly; SameSite=Strict; Path=/");
                     let mut response = Redirect::to("/admin/set-password").into_response();
                     response
                         .headers_mut()
@@ -176,9 +175,8 @@ async fn login_submit(State(state): State<AppState>, Form(form): Form<LoginForm>
         }
         LoginResult::UserAccepted => match auth::create_session(&state.storage, "full").await {
             Ok((session_id, _csrf)) => {
-                let cookie = format!(
-                    "{SESSION_COOKIE}={session_id}; HttpOnly; SameSite=Strict; Path=/"
-                );
+                let cookie =
+                    format!("{SESSION_COOKIE}={session_id}; HttpOnly; SameSite=Strict; Path=/");
                 let mut response = Redirect::to("/admin").into_response();
                 response
                     .headers_mut()
