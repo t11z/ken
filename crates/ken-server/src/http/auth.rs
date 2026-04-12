@@ -178,7 +178,10 @@ pub async fn ensure_admin_bootstrap(storage: &Storage) -> Result<(), crate::erro
     storage.set_admin_secret(BOOTSTRAP_HASH_KEY, &hash).await?;
 
     tracing::info!("=====================================================");
-    tracing::info!("KEN BOOTSTRAP PASSWORD (shown once — log in now): {}", password);
+    tracing::info!(
+        "KEN BOOTSTRAP PASSWORD (shown once — log in now): {}",
+        password
+    );
     tracing::info!("=====================================================");
 
     Ok(())
