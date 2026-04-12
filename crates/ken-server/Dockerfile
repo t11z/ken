@@ -2,7 +2,7 @@
 # Stage 1: Build the binary
 # Stage 2: Copy into a minimal runtime image
 
-FROM rust:1.94-slim AS builder
+FROM rust:1.94.1-slim-bookworm AS builder
 
 WORKDIR /build
 COPY . .
