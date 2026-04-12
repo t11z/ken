@@ -15,8 +15,70 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      always: ${{ steps.filter.outputs.always }}
+      server: ${{ steps.filter.outputs.server }}
+      agent:  ${{ steps.filter.outputs.agent }}
+      fmt:    ${{ steps.filter.outputs.fmt }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: detect changed paths
+        id: filter
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+            HEAD="${{ github.event.pull_request.head.sha }}"
+          else
+            BASE="${{ github.event.before }}"
+            HEAD="${{ github.sha }}"
+          fi
+
+          # New branch push — before SHA is all zeros; run everything.
+          if [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+            echo "always=true" >> "$GITHUB_OUTPUT"
+            echo "server=true" >> "$GITHUB_OUTPUT"
+            echo "agent=true"  >> "$GITHUB_OUTPUT"
+            echo "fmt=true"    >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          CHANGED=$(git diff --name-only "$BASE" "$HEAD")
+          echo "Changed files:"
+          echo "$CHANGED"
+
+          always=false server=false agent=false fmt=false
+
+          if echo "$CHANGED" | grep -qE \
+            '^(crates/ken-protocol/|Cargo\.toml$|Cargo\.lock$|rust-toolchain\.toml$|deny\.toml$|\.github/workflows/ci\.yml$)'; then
+            always=true
+          fi
+
+          if [ "$always" = "true" ] || echo "$CHANGED" | grep -qE '^crates/ken-server/'; then
+            server=true
+          fi
+
+          if [ "$always" = "true" ] || echo "$CHANGED" | grep -qE '^crates/ken-agent/'; then
+            agent=true
+          fi
+
+          if [ "$always" = "true" ] || echo "$CHANGED" | grep -qE '\.rs$'; then
+            fmt=true
+          fi
+
+          echo "always=$always" >> "$GITHUB_OUTPUT"
+          echo "server=$server" >> "$GITHUB_OUTPUT"
+          echo "agent=$agent"   >> "$GITHUB_OUTPUT"
+          echo "fmt=$fmt"       >> "$GITHUB_OUTPUT"
+
   fmt:
     name: rustfmt
+    needs: changes
+    if: needs.changes.outputs.fmt == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -27,6 +89,8 @@ jobs:
 
   clippy-linux:
     name: clippy (linux, server + protocol)
+    needs: changes
+    if: needs.changes.outputs.server == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -39,6 +103,8 @@ jobs:
 
   clippy-windows:
     name: clippy (windows, agent + protocol)
+    needs: changes
+    if: needs.changes.outputs.agent == 'true'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -51,6 +117,8 @@ jobs:
 
   test-linux:
     name: test (linux, server + protocol)
+    needs: changes
+    if: needs.changes.outputs.server == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -61,6 +129,8 @@ jobs:
 
   test-windows:
     name: test (windows, agent + protocol)
+    needs: changes
+    if: needs.changes.outputs.agent == 'true'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -71,6 +141,8 @@ jobs:
 
   build-server-arm64:
     name: build server (linux/arm64, release)
+    needs: changes
+    if: needs.changes.outputs.server == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -85,6 +157,8 @@ jobs:
 
   build-agent-windows:
     name: build agent (windows, release)
+    needs: changes
+    if: needs.changes.outputs.agent == 'true'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -95,6 +169,8 @@ jobs:
 
   deny:
     name: cargo-deny
+    needs: changes
+    if: needs.changes.outputs.always == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -103,3 +179,39 @@ jobs:
           log-level: warn
           command: check
           arguments: --all-features
+
+  all-checks:
+    name: all checks passed
+    if: always()
+    needs:
+      - changes
+      - fmt
+      - clippy-linux
+      - clippy-windows
+      - test-linux
+      - test-windows
+      - build-server-arm64
+      - build-agent-windows
+      - deny
+    runs-on: ubuntu-latest
+    steps:
+      - name: check all job results
+        run: |
+          results=(
+            "${{ needs.changes.result }}"
+            "${{ needs.fmt.result }}"
+            "${{ needs.clippy-linux.result }}"
+            "${{ needs.clippy-windows.result }}"
+            "${{ needs.test-linux.result }}"
+            "${{ needs.test-windows.result }}"
+            "${{ needs.build-server-arm64.result }}"
+            "${{ needs.build-agent-windows.result }}"
+            "${{ needs.deny.result }}"
+          )
+          for result in "${results[@]}"; do
+            if [ "$result" != "success" ] && [ "$result" != "skipped" ]; then
+              echo "Unexpected job result: $result"
+              exit 1
+            fi
+          done
+          echo "All jobs succeeded or were skipped."
