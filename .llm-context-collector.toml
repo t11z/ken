@@ -5,6 +5,54 @@
 # under ~200 KB. Add new topics as new conversation areas open up;
 # do not expand existing ones to cover unrelated questions.
 
+[topics.admin-auth]
+description = """
+Server-side admin authentication and first-login bootstrap: where the
+initial admin credential is generated, where it is surfaced (log,
+file, elsewhere), how the login handler verifies it, how the session
+cookie is issued and validated, and how the CA/storage layers hook in
+at server startup. Wire-format inputs are not relevant here — this is
+purely the browser-facing admin path and the process-start path.
+Used to determine whether the current first-login mechanism needs an
+ADR to formalize it, replace it, or document it as-is.
+"""
+
+paths = [
+  # --- Server: admin-facing HTTP (login, session, admin handlers)
+  "crates/ken-server/src/http/mod.rs",
+  "crates/ken-server/src/http/admin.rs",
+  "crates/ken-server/src/http/auth.rs",
+  "crates/ken-server/src/http/enrollment.rs",
+  "crates/ken-server/src/http/tls.rs",
+
+  # --- Server: process start, config, state, CA, storage entry points
+  "crates/ken-server/src/main.rs",
+  "crates/ken-server/src/lib.rs",
+  "crates/ken-server/src/config.rs",
+  "crates/ken-server/src/state.rs",
+  "crates/ken-server/src/ca.rs",
+  "crates/ken-server/src/error.rs",
+  "crates/ken-server/src/storage/mod.rs",
+
+  # --- Schema — to see whether there is an admin_session or admin_token table
+  "crates/ken-server/migrations/0001_initial.sql",
+
+  # --- Templates involved in the login flow (read-only, for context)
+  "crates/ken-server/templates/base.html",
+  "crates/ken-server/templates/login.html",
+
+  # --- Deployment-facing artifacts that shape the bootstrap surface
+  "crates/ken-server/ken.example.toml",
+  "crates/ken-server/docker-compose.example.yml",
+  "crates/ken-server/Dockerfile",
+
+  # --- Server manifest
+  "crates/ken-server/Cargo.toml",
+
+  # --- Crate-level conventions
+  "crates/ken-server/CLAUDE.md",
+]
+
 [topics.audit-events]
 description = """
 Audit event type definitions, the local audit log write path, and any
