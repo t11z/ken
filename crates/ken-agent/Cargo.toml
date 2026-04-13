@@ -51,7 +51,7 @@ windows = { workspace = true, features = [
     "Win32_System_UpdateAgent",
 ] }
 # GUI for the tray app (ADR-0009) — optional, gated behind tray-app feature
-eframe = { version = "0.31", default-features = false, features = ["glow", "default_fonts"], optional = true }
+eframe = { version = "0.34", default-features = false, features = ["glow", "default_fonts"], optional = true }
 tray-icon = { version = "0.19", optional = true }
 image = { version = "0.25", default-features = false, features = ["png"], optional = true }
 
