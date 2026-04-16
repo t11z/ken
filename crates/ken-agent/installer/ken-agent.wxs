@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Ken Agent MSI installer — WiX v4
+
+  Built against ADR-0011: Agent update mechanism via signed MSI and msiexec.
+
+  Preprocessor variables (pass with -d on wix build):
+    Version   — semver string, e.g. "0.1.0"  (required)
+    AgentBin  — path to ken-agent.exe release binary  (required)
+
+  IMPORTANT: The UpgradeCode and component GUIDs below are permanent
+  identifiers for this product line.  Do NOT change or regenerate them.
+  Changing UpgradeCode breaks major-upgrade detection so two versions
+  would coexist instead of upgrading.  Changing a component GUID causes
+  msiexec to treat the component as a new installation rather than an
+  upgrade, leaving orphaned service registrations on endpoints.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+
+  <Package
+    Name="Ken Agent"
+    Manufacturer="Ken Project"
+    Version="$(var.Version)"
+    UpgradeCode="{C4A7B3E2-1F5D-4A8C-9E6B-2D3F7A1B4E8C}"
+    Scope="perMachine">
+
+    <!-- Require Windows 10 or later (VersionNT 1000 = 10.0). -->
+    <Launch
+      Condition="Installed OR VersionNT &gt;= 1000"
+      Message="Ken Agent requires Windows 10 or later." />
+
+    <!--
+      Remove any older version before installing this one, and reject
+      downgrades with a clear error message.
+      ADR-0011 step 7: msiexec handles rollback if the new service fails
+      to start; that rollback path relies on MajorUpgrade being present
+      so the old version's registration is cleanly removed first.
+    -->
+    <MajorUpgrade
+      DowngradeErrorMessage="A newer version of Ken Agent is already installed. Uninstall it before installing this version." />
+
+    <!-- Single compressed cabinet embedded in the MSI. -->
+    <MediaTemplate EmbedCab="yes" />
+
+    <Feature Id="Main">
+      <ComponentRef Id="AgentExe" />
+    </Feature>
+
+  </Package>
+
+  <!--
+    Install location: %ProgramFiles%\Ken\
+    Using ProgramFiles64Folder so the binary lands in the 64-bit program
+    files tree.  The agent is compiled for x64 exclusively.
+  -->
+  <Fragment>
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="Ken" />
+    </StandardDirectory>
+  </Fragment>
+
+  <!--
+    AgentExe component: installs ken-agent.exe and registers the
+    KenAgent Windows service.
+
+    Component GUID {A1B2C3D4-E5F6-4A7B-8C9D-0E1F2A3B4C5D}: permanent,
+    do not regenerate.
+
+    The same binary handles both the SYSTEM service (invoked as
+    "ken-agent.exe run-service" by the SCM) and the per-session tray
+    app (invoked as "ken-agent.exe tray" by the service itself via
+    CreateProcessAsUser).  See ken-agent/CLAUDE.md §Components.
+
+    %ProgramData%\Ken\ and its subdirectories are NOT created here.
+    The agent creates them with the correct ACLs on first run, avoiding
+    MSI ownership of data that must survive uninstall.
+  -->
+  <Fragment>
+    <Component
+      Id="AgentExe"
+      Guid="{A1B2C3D4-E5F6-4A7B-8C9D-0E1F2A3B4C5D}"
+      Directory="INSTALLFOLDER">
+
+      <File
+        Id="KenAgentExe"
+        Source="$(var.AgentBin)"
+        Name="ken-agent.exe"
+        KeyPath="yes" />
+
+      <!--
+        Register KenAgent as a Windows service.
+        - Account="LocalSystem": runs as SYSTEM per ken-agent/CLAUDE.md
+        - Start="auto": starts automatically at boot
+        - Arguments="run-service": the subcommand the SCM passes to the binary;
+          service_dispatcher::start in lifecycle.rs expects this
+        ADR-0011 step 7: msiexec handles service registration; Ken does not
+        write its own SCM calls during install.
+      -->
+      <ServiceInstall
+        Id="KenAgentInstall"
+        Name="KenAgent"
+        DisplayName="Ken Agent"
+        Description="Ken — observability and consent-gated remote access for family PCs."
+        Type="ownProcess"
+        Start="auto"
+        ErrorControl="normal"
+        Account="LocalSystem"
+        Arguments="run-service" />
+
+      <!--
+        Stop the running service before an upgrade or uninstall, and
+        remove the service registration on uninstall.
+        Stop="both" covers both install (major-upgrade stop) and uninstall.
+      -->
+      <ServiceControl
+        Id="StopKenAgent"
+        Name="KenAgent"
+        Stop="both"
+        Remove="uninstall"
+        Wait="yes" />
+
+      <!-- Start the service after a fresh install. -->
+      <ServiceControl
+        Id="StartKenAgent"
+        Name="KenAgent"
+        Start="install"
+        Wait="no" />
+
+    </Component>
+  </Fragment>
+
+</Wix>
