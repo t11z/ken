@@ -70,7 +70,7 @@ Claude Code receives task descriptions directly in its session from the Architec
 2. **Read the relevant `CLAUDE.md`** for the crate or area being modified. Conventions in a sub-`CLAUDE.md` override or refine this root file for that subtree.
 3. **Check `.claude/skills/`** for any SKILL.md that matches the class of work. Load it before proceeding.
 4. **Plan the change in writing** as a comment or scratch note before editing files. The plan should name every file that will be touched and reference the ADR or task section that justifies each change.
-5. **Make the change**, then run the relevant build and test commands. Do not consider the work complete until the build passes and tests pass. If a test cannot pass for reasons outside the scope of the task, surface this in the pull request description rather than disabling the test.
+5. **Make the change**, then run `cargo fmt --check`, `cargo clippy -- -D warnings`, and `cargo test --workspace` before pushing. Do not consider the work complete until all three pass. A pre-push git hook in `.githooks/pre-push` enforces this gate; do not bypass it. If a test cannot pass for reasons outside the scope of the task, surface this in the pull request description rather than disabling the test.
 6. **Open a pull request** with a description that names the ADRs the change is built against. The PR description is the contract between implementation and intent.
 7. **Do not commit to `main` directly.** All work goes through pull requests.
 

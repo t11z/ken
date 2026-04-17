@@ -1,0 +1,33 @@
+#!/bin/bash
+# Blocks git push if cargo fmt, clippy, or tests fail.
+# Registered via: git config core.hooksPath .githooks
+
+WORKSPACE_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+if [ -z "$WORKSPACE_ROOT" ]; then
+  exit 0
+fi
+
+cd "$WORKSPACE_ROOT" || exit 0
+
+echo "Running pre-push CI checks..."
+
+cargo fmt --check
+if [ $? -ne 0 ]; then
+  echo "ERROR: cargo fmt --check failed. Run 'cargo fmt' to fix."
+  exit 1
+fi
+
+cargo clippy -- -D warnings
+if [ $? -ne 0 ]; then
+  echo "ERROR: cargo clippy -- -D warnings failed."
+  exit 1
+fi
+
+cargo test --workspace
+if [ $? -ne 0 ]; then
+  echo "ERROR: cargo test --workspace failed."
+  exit 1
+fi
+
+echo "Pre-push checks passed."
+exit 0
