@@ -195,8 +195,7 @@ impl eframe::App for TrayApp {
                     let mut dialog_lock = consent_dialog.lock().unwrap();
                     if let Some(ref mut dialog) = *dialog_lock {
                         if let Some(outcome) = dialog.show_in_viewport(ctx) {
-                            let granted =
-                                matches!(outcome, crate::ipc::ConsentOutcome::Granted);
+                            let granted = matches!(outcome, crate::ipc::ConsentOutcome::Granted);
                             let command_id = dialog.command_id;
                             if let Ok(mut client) = IpcClient::connect() {
                                 let _ = client.submit_consent_response(&command_id, granted);
