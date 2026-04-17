@@ -305,7 +305,7 @@ fn generate_password() -> String {
 }
 
 /// Extract a cookie value by name from a `Cookie` header string.
-fn extract_cookie(header: &str, name: &str) -> Option<String> {
+pub fn extract_cookie(header: &str, name: &str) -> Option<String> {
     header.split(';').map(str::trim).find_map(|pair| {
         let (key, value) = pair.split_once('=')?;
         if key.trim() == name {

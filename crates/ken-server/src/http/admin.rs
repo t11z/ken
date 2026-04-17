@@ -11,7 +11,7 @@
 
 use askama::Template;
 use axum::extract::{Form, Path, State};
-use axum::http::header::SET_COOKIE;
+use axum::http::{header::SET_COOKIE, HeaderMap};
 use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum::routing::{get, post};
 use axum::Router;
@@ -142,8 +142,23 @@ struct CommandSentTemplate {
 // --- Handlers ---
 
 /// Redirect `/` to the dashboard if authenticated, otherwise to the login page.
-async fn root_redirect(admin: Option<AuthenticatedAdmin>) -> Redirect {
-    if admin.is_some() {
+///
+/// Uses `State` + `HeaderMap` directly rather than `Option<AuthenticatedAdmin>`
+/// because axum 0.8 cannot satisfy the `Handler` bound when `T::Rejection =
+/// Response` and there is no explicit state parameter to anchor type inference.
+async fn root_redirect(State(state): State<AppState>, headers: HeaderMap) -> Redirect {
+    let cookie_str = headers
+        .get("cookie")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+
+    let authenticated = if let Some(id) = auth::extract_cookie(cookie_str, auth::SESSION_COOKIE) {
+        state.storage.get_admin_session(&id).await.ok().flatten().is_some()
+    } else {
+        false
+    };
+
+    if authenticated {
         Redirect::to("/admin")
     } else {
         Redirect::to("/admin/login")
