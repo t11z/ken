@@ -11,7 +11,7 @@
 
 use askama::Template;
 use axum::extract::{Form, Path, State};
-use axum::http::{HeaderMap, header::SET_COOKIE};
+use axum::http::{header::SET_COOKIE, HeaderMap};
 use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum::routing::{get, post};
 use axum::Router;
@@ -153,7 +153,13 @@ async fn root_redirect(State(state): State<AppState>, headers: HeaderMap) -> Red
         .unwrap_or("");
 
     let authenticated = if let Some(id) = auth::extract_cookie(cookie_str, auth::SESSION_COOKIE) {
-        state.storage.get_admin_session(&id).await.ok().flatten().is_some()
+        state
+            .storage
+            .get_admin_session(&id)
+            .await
+            .ok()
+            .flatten()
+            .is_some()
     } else {
         false
     };

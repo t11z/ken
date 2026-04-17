@@ -44,8 +44,8 @@ pub fn run_tray_app() {
     let _ = menu.append(&item_kill);
     let _ = menu.append(&item_quit);
 
-    // Placeholder 16x16 RGBA icon.
-    let icon = tray_icon::Icon::from_rgba(vec![0x33, 0x66, 0x99, 0xFF; 16 * 16], 16, 16)
+    // Placeholder 16x16 RGBA icon (solid blue, one pixel repeated).
+    let icon = tray_icon::Icon::from_rgba([0x33u8, 0x66, 0x99, 0xFF].repeat(16 * 16), 16, 16)
         .expect("valid icon");
 
     let _tray = TrayIconBuilder::new()
