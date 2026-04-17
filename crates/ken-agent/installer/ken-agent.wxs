@@ -24,14 +24,6 @@
     UpgradeCode="{C4A7B3E2-1F5D-4A8C-9E6B-2D3F7A1B4E8C}"
     Scope="perMachine">
 
-    <!-- Block installation on Windows older than 10 (VersionNT < 1000).
-         WiX v5+ <Launch> uses blocking semantics: the message is shown
-         when the condition is TRUE, unlike WiX v3 <Condition> where the
-         condition had to be TRUE to proceed. -->
-    <Launch
-      Condition="NOT Installed AND VersionNT &lt; 1000"
-      Message="Ken Agent requires Windows 10 or later." />
-
     <!--
       Remove any older version before installing this one, and reject
       downgrades with a clear error message.
