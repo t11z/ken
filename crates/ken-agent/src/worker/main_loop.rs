@@ -24,6 +24,7 @@ use crate::worker::commands;
 /// # Errors
 ///
 /// Returns an error if the initial configuration or client setup fails.
+#[allow(clippy::too_many_lines)] // worker loop: session setup + IPC + heartbeat lifecycle is clearest as one function
 pub async fn run(shutdown: Arc<AtomicBool>, paths: &DataPaths) -> Result<(), anyhow::Error> {
     let config = AgentConfig::load(&paths.config_file)?;
 
@@ -49,15 +50,25 @@ pub async fn run(shutdown: Arc<AtomicBool>, paths: &DataPaths) -> Result<(), any
     let consent_state = commands::new_consent_state();
 
     // Start the Named Pipe IPC server on Windows.
+    // Session ID is derived here (call site) rather than inside server::run,
+    // so the server serves the correct session under RDP / Fast User Switch
+    // (issue #74).
     #[cfg(windows)]
     {
-        let cs = consent_state.clone();
-        let sd = shutdown.clone();
-        let au = audit.clone();
-        let pa = Arc::new(DataPaths::new(&crate::config::data_dir()));
-        tokio::task::spawn_blocking(move || {
-            crate::ipc::server::run(cs, sd, au, pa);
-        });
+        let session_id = unsafe {
+            windows::Win32::System::RemoteDesktop::WTSGetActiveConsoleSessionId()
+        };
+        if session_id == 0xFFFF_FFFF {
+            tracing::warn!("no active console session, IPC pipe server not starting");
+        } else {
+            let cs = consent_state.clone();
+            let sd = shutdown.clone();
+            let au = audit.clone();
+            let pa = Arc::new(DataPaths::new(&crate::config::data_dir()));
+            tokio::task::spawn_blocking(move || {
+                crate::ipc::server::run(cs, sd, au, pa, session_id);
+            });
+        }
     }
 
     // Create the observer set per ADR-0018 and ADR-0021. Each observer

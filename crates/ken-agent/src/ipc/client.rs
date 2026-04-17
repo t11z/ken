@@ -46,6 +46,8 @@ impl IpcClient {
         let name = super::server::pipe_name(session_id);
         let name_wide: Vec<u16> = name.encode_utf16().chain(std::iter::once(0)).collect();
 
+        use windows::Win32::System::Pipes::WaitNamedPipeW;
+
         let handle = unsafe {
             CreateFileW(
                 PCWSTR(name_wide.as_ptr()),
@@ -63,12 +65,40 @@ impl IpcClient {
             Ok(_) => Err(anyhow::anyhow!("service is not running")),
             Err(e) => {
                 let code = e.code().0 as u32;
-                // ERROR_FILE_NOT_FOUND = 2, ERROR_PIPE_BUSY = 231
+                // ERROR_FILE_NOT_FOUND = 2, ERROR_ACCESS_DENIED = 5, ERROR_PIPE_BUSY = 231
                 if code == 2 {
                     Err(anyhow::anyhow!("service is not running"))
                 } else if code == 5 {
-                    // ERROR_ACCESS_DENIED
                     Err(anyhow::anyhow!("wrong user or ACL mismatch"))
+                } else if code == 231 {
+                    // ERROR_PIPE_BUSY: server is handling another client.
+                    // Wait up to 500 ms then retry once (issue #75).
+                    let _ = unsafe { WaitNamedPipeW(PCWSTR(name_wide.as_ptr()), 500) };
+                    let retry = unsafe {
+                        CreateFileW(
+                            PCWSTR(name_wide.as_ptr()),
+                            (GENERIC_READ | GENERIC_WRITE).0,
+                            FILE_SHARE_NONE,
+                            None,
+                            OPEN_EXISTING,
+                            FILE_ATTRIBUTE_NORMAL,
+                            None,
+                        )
+                    };
+                    match retry {
+                        Ok(h) if h != INVALID_HANDLE_VALUE => Ok(Self { pipe: h }),
+                        Ok(_) => Err(anyhow::anyhow!("service is not running")),
+                        Err(e2) => {
+                            let code2 = e2.code().0 as u32;
+                            if code2 == 2 {
+                                Err(anyhow::anyhow!("service is not running"))
+                            } else if code2 == 5 {
+                                Err(anyhow::anyhow!("wrong user or ACL mismatch"))
+                            } else {
+                                Err(anyhow::anyhow!("failed to connect to pipe after retry: {e2}"))
+                            }
+                        }
+                    }
                 } else {
                     Err(anyhow::anyhow!("failed to connect to pipe: {e}"))
                 }

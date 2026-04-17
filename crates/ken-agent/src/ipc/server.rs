@@ -52,6 +52,9 @@ pub fn pipe_name(session_id: u32) -> String {
 /// This function blocks and should be called via
 /// `tokio::task::spawn_blocking`. It creates a named pipe, sets
 /// up security, and loops accepting connections.
+///
+/// `session_id` must be the session the tray app was launched into
+/// (passed by the caller, not derived internally, per issue #74).
 #[allow(clippy::too_many_lines)] // Windows pipe server loop: the connection lifecycle is clearest as a single function
 #[allow(clippy::needless_pass_by_value)] // Arc parameters are moved from a spawned closure
 pub fn run(
@@ -59,6 +62,7 @@ pub fn run(
     shutdown: Arc<AtomicBool>,
     audit: Arc<AuditLogger>,
     paths: Arc<crate::config::DataPaths>,
+    session_id: u32,
 ) {
     use windows::core::PCWSTR;
     use windows::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
@@ -68,13 +72,6 @@ pub fn run(
         ConnectNamedPipe, CreateNamedPipeW, DisconnectNamedPipe, PIPE_READMODE_MESSAGE,
         PIPE_TYPE_MESSAGE, PIPE_WAIT,
     };
-    use windows::Win32::System::RemoteDesktop::WTSGetActiveConsoleSessionId;
-
-    let session_id = unsafe { WTSGetActiveConsoleSessionId() };
-    if session_id == 0xFFFF_FFFF {
-        tracing::warn!("no active console session, pipe server not starting");
-        return;
-    }
 
     let name = pipe_name(session_id);
     tracing::info!(pipe = %name, session_id, "starting IPC pipe server");
@@ -98,28 +95,30 @@ pub fn run(
 
     let pipe_name_wide: Vec<u16> = name.encode_utf16().chain(std::iter::once(0)).collect();
 
+    // Create the pipe once and recycle it via DisconnectNamedPipe →
+    // ConnectNamedPipe, eliminating the name-gap window that caused
+    // spurious "service not running" errors (issue #73).
+    let pipe = unsafe {
+        CreateNamedPipeW(
+            PCWSTR(pipe_name_wide.as_ptr()),
+            PIPE_ACCESS_DUPLEX,
+            PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT,
+            1,    // max instances: one connection at a time
+            8192, // output buffer size
+            8192, // input buffer size
+            0,    // default timeout
+            Some(&raw const sa),
+        )
+    };
+
+    if pipe == INVALID_HANDLE_VALUE {
+        tracing::error!("failed to create named pipe");
+        return;
+    }
+
     while !shutdown.load(Ordering::SeqCst) {
-        let pipe = unsafe {
-            CreateNamedPipeW(
-                PCWSTR(pipe_name_wide.as_ptr()),
-                PIPE_ACCESS_DUPLEX,
-                PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT,
-                1,    // max instances: one connection at a time
-                8192, // output buffer size
-                8192, // input buffer size
-                0,    // default timeout
-                Some(&raw const sa),
-            )
-        };
-
-        if pipe == INVALID_HANDLE_VALUE {
-            tracing::error!("failed to create named pipe");
-            std::thread::sleep(std::time::Duration::from_secs(1));
-            continue;
-        }
-
         // Block until a client connects. ERROR_PIPE_CONNECTED (535)
-        // means the client connected between Create and Connect — OK.
+        // means the client connected between Disconnect and Connect — OK.
         if let Err(e) = unsafe { ConnectNamedPipe(pipe, None) } {
             let os_err = std::io::Error::last_os_error();
             if os_err.raw_os_error() != Some(535) {
@@ -128,7 +127,7 @@ pub fn run(
                     "ConnectNamedPipe failed"
                 );
                 unsafe {
-                    let _ = CloseHandle(pipe);
+                    let _ = DisconnectNamedPipe(pipe);
                 }
                 continue;
             }
@@ -165,8 +164,11 @@ pub fn run(
 
         unsafe {
             let _ = DisconnectNamedPipe(pipe);
-            let _ = CloseHandle(pipe);
         }
+    }
+
+    unsafe {
+        let _ = CloseHandle(pipe);
     }
 
     tracing::info!("pipe server shutting down");
