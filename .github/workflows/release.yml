@@ -58,7 +58,7 @@ jobs:
           $cert = New-SelfSignedCertificate `
             -Subject "CN=Ken Project (Phase 1 self-signed)" `
             -Type CodeSigningCert `
-            -CertStoreLocation Cert:\LocalMachine\My `
+            -CertStoreLocation Cert:\CurrentUser\My `
             -NotAfter (Get-Date).AddYears(2)
 
           $signtool = Get-ChildItem `
