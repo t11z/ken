@@ -161,6 +161,10 @@ struct TrayApp {
 
 impl eframe::App for TrayApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Keep the root shell window hidden — with_visible(false) in NativeOptions is not
+        // reliable on Windows with eframe 0.31 and the window can flash on first paint.
+        ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+
         // Check for incoming IPC messages (non-blocking).
         if let Ok(rx) = self.ipc_rx.lock() {
             while let Ok(msg) = rx.try_recv() {
