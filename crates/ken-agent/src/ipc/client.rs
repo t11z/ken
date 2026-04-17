@@ -32,7 +32,8 @@ impl IpcClient {
         use windows::Win32::Storage::FileSystem::{
             CreateFileW, FILE_ATTRIBUTE_NORMAL, FILE_SHARE_NONE, OPEN_EXISTING,
         };
-        use windows::Win32::System::Threading::{GetCurrentProcessId, ProcessIdToSessionId};
+        use windows::Win32::System::RemoteDesktop::ProcessIdToSessionId;
+        use windows::Win32::System::Threading::GetCurrentProcessId;
 
         // Determine our session ID
         let mut session_id: u32 = 0;
