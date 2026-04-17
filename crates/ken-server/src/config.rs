@@ -56,6 +56,10 @@ pub struct ServerConfig {
     /// constructing the enrollment URL shown to the operator after creating a
     /// new enrollment token. Set this to the hostname or IP the operator's
     /// browser will use to reach the admin UI, e.g. `https://ken.local:8444`.
+    ///
+    /// When not set, the server auto-detects the outbound IP of the host's
+    /// physical network adapter. Override this explicitly when the auto-detected
+    /// IP is not reachable by the browser (e.g. behind NAT, multiple NICs).
     #[serde(default = "default_admin_public_url")]
     pub admin_public_url: String,
 }
@@ -79,12 +83,36 @@ fn default_admin_listen() -> SocketAddr {
     "0.0.0.0:8444".parse().unwrap()
 }
 
+/// Detect the IP of the physical outbound network adapter.
+///
+/// Opens a UDP socket and asks the kernel which local address it would
+/// use to reach an external host. No traffic is sent. Returns `None`
+/// if the kernel cannot determine an outbound route (e.g. no network).
+fn detect_outbound_ip() -> Option<std::net::IpAddr> {
+    let socket = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
+    socket.connect("8.8.8.8:80").ok()?;
+    Some(socket.local_addr().ok()?.ip())
+}
+
+fn format_host(ip: std::net::IpAddr) -> String {
+    match ip {
+        std::net::IpAddr::V4(v4) => v4.to_string(),
+        std::net::IpAddr::V6(v6) => format!("[{v6}]"),
+    }
+}
+
 fn default_public_url() -> String {
-    "https://localhost:8443".to_string()
+    let host = detect_outbound_ip()
+        .map(format_host)
+        .unwrap_or_else(|| "localhost".to_string());
+    format!("https://{host}:8443")
 }
 
 fn default_admin_public_url() -> String {
-    "https://localhost:8444".to_string()
+    let host = detect_outbound_ip()
+        .map(format_host)
+        .unwrap_or_else(|| "localhost".to_string());
+    format!("https://{host}:8444")
 }
 
 /// Storage configuration.
