@@ -95,7 +95,9 @@ impl IpcClient {
                             } else if code2 == 5 {
                                 Err(anyhow::anyhow!("wrong user or ACL mismatch"))
                             } else {
-                                Err(anyhow::anyhow!("failed to connect to pipe after retry: {e2}"))
+                                Err(anyhow::anyhow!(
+                                    "failed to connect to pipe after retry: {e2}"
+                                ))
                             }
                         }
                     }
