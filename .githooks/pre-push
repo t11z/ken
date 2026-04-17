@@ -2,6 +2,10 @@
 # Blocks git push if cargo fmt, clippy, or tests fail.
 # Registered via: git config core.hooksPath .githooks
 
+# Ensure cargo is on PATH (rustup installs to ~/.cargo/bin)
+# shellcheck source=/dev/null
+[ -f "$HOME/.cargo/env" ] && source "$HOME/.cargo/env"
+
 WORKSPACE_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
 if [ -z "$WORKSPACE_ROOT" ]; then
   exit 0
