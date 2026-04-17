@@ -32,6 +32,7 @@ use super::auth::{self, AuthenticatedAdmin, AuthenticatedFullAdmin, LoginResult,
 /// Admin routes.
 pub fn routes() -> Router<AppState> {
     Router::new()
+        .route("/", get(root_redirect))
         .route("/admin/login", get(login_page))
         .route("/admin/login", post(login_submit))
         .route("/admin/logout", post(logout))
@@ -139,6 +140,15 @@ struct CommandSentTemplate {
 }
 
 // --- Handlers ---
+
+/// Redirect `/` to the dashboard if authenticated, otherwise to the login page.
+async fn root_redirect(admin: Option<AuthenticatedAdmin>) -> Redirect {
+    if admin.is_some() {
+        Redirect::to("/admin")
+    } else {
+        Redirect::to("/admin/login")
+    }
+}
 
 async fn login_page() -> Result<Html<String>, AppError> {
     let template = LoginTemplate { error: None };
