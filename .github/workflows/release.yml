@@ -24,7 +24,10 @@ jobs:
         run: cargo build -p ken-agent --release
 
       - name: install WiX
-        run: dotnet tool install --global wix --version "4.*"
+        run: dotnet tool install --global wix
+
+      - name: accept WiX OSMF EULA
+        run: wix eula accept wix7
 
       - name: build MSI
         id: build
