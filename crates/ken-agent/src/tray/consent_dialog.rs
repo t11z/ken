@@ -51,9 +51,12 @@ impl ConsentDialog {
         }
     }
 
-    /// Show the consent dialog. Returns `Some(outcome)` when the user
-    /// decides or the timeout expires.
-    pub fn show(&mut self, ctx: &egui::Context) -> Option<ConsentOutcome> {
+    /// Render the dialog inside an OS-level viewport (via `show_viewport_deferred`).
+    ///
+    /// Uses `egui::CentralPanel` so the content fills the independent OS window
+    /// rather than floating inside a parent eframe window. Returns `Some(outcome)`
+    /// when the user decides or the timeout expires. ADR-0009.
+    pub fn show_in_viewport(&mut self, ctx: &egui::Context) -> Option<ConsentOutcome> {
         if self.outcome.is_some() {
             return self.outcome.clone();
         }
@@ -66,49 +69,44 @@ impl ConsentDialog {
 
         let remaining = (self.timeout - elapsed).as_secs();
 
-        egui::Window::new("Ken \u{2014} Fernsteuerungs-Anfrage")
-            .collapsible(false)
-            .resizable(false)
-            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-            .show(ctx, |ui| {
-                ui.vertical_centered(|ui| {
-                    ui.add_space(10.0);
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "{} möchte eine Fernsteuerungs-Sitzung auf deinem PC starten.",
-                            self.admin_name
-                        ))
-                        .size(16.0),
-                    );
+        egui::CentralPanel::default().show(ctx, |ui| {
+            ui.vertical_centered(|ui| {
+                ui.add_space(10.0);
+                ui.label(
+                    egui::RichText::new(format!(
+                        "{} möchte eine Fernsteuerungs-Sitzung auf deinem PC starten.",
+                        self.admin_name
+                    ))
+                    .size(16.0),
+                );
 
-                    if !self.session_description.is_empty() {
-                        ui.add_space(5.0);
-                        ui.label(format!("Grund: {}", self.session_description));
+                if !self.session_description.is_empty() {
+                    ui.add_space(5.0);
+                    ui.label(format!("Grund: {}", self.session_description));
+                }
+
+                ui.add_space(10.0);
+                ui.label(format!("Verbleibende Zeit: {remaining} Sekunden"));
+                ui.add_space(10.0);
+
+                ui.horizontal(|ui| {
+                    if ui
+                        .button(egui::RichText::new("Erlauben").size(14.0))
+                        .clicked()
+                    {
+                        self.outcome = Some(ConsentOutcome::Granted);
                     }
-
-                    ui.add_space(10.0);
-                    ui.label(format!("Verbleibende Zeit: {remaining} Sekunden"));
-                    ui.add_space(10.0);
-
-                    ui.horizontal(|ui| {
-                        if ui
-                            .button(egui::RichText::new("Erlauben").size(14.0))
-                            .clicked()
-                        {
-                            self.outcome = Some(ConsentOutcome::Granted);
-                        }
-                        ui.add_space(20.0);
-                        if ui
-                            .button(egui::RichText::new("Ablehnen").size(14.0))
-                            .clicked()
-                        {
-                            self.outcome = Some(ConsentOutcome::Denied);
-                        }
-                    });
+                    ui.add_space(20.0);
+                    if ui
+                        .button(egui::RichText::new("Ablehnen").size(14.0))
+                        .clicked()
+                    {
+                        self.outcome = Some(ConsentOutcome::Denied);
+                    }
                 });
             });
+        });
 
-        // Repaint frequently for the countdown timer.
         ctx.request_repaint_after(Duration::from_millis(500));
 
         self.outcome.clone()
@@ -131,7 +129,7 @@ mod tests {
             ConsentDialog::new("Admin".to_string(), "test".to_string(), CommandId::new());
         dialog.timeout = Duration::from_millis(0);
         dialog.shown_at = Instant::now() - Duration::from_secs(1);
-        // Without a UI context we can't call show(), but the timeout
+        // Without a UI context we can't call show_in_viewport(), but the timeout
         // logic is verified.
         let elapsed = dialog.shown_at.elapsed();
         assert!(elapsed >= dialog.timeout);
