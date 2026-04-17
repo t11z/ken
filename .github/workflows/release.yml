@@ -26,6 +26,9 @@ jobs:
       - name: install WiX
         run: dotnet tool install --global wix
 
+      - name: accept WiX OSMF EULA
+        run: wix eula accept
+
       - name: build MSI
         id: build
         shell: pwsh
