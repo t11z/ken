@@ -29,7 +29,8 @@ enum IpcMessage {
 ///
 /// Creates the system tray icon with menu items, starts a background
 /// IPC polling thread for consent requests, and runs the egui event
-/// loop. The main window is hidden by default (tray-only mode).
+/// loop. The root eframe window is invisible and zero-sized; all
+/// visible UI is opened as independent OS-level viewports (ADR-0009).
 pub fn run_tray_app() {
     tracing::info!("starting tray app");
 
@@ -112,10 +113,14 @@ pub fn run_tray_app() {
         }
     });
 
+    // Root window: invisible, zero-sized, no decorations, no taskbar entry.
+    // All visible surfaces are opened as independent OS-level viewports below.
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([400.0, 300.0])
-            .with_visible(false),
+            .with_inner_size([1.0, 1.0])
+            .with_visible(false)
+            .with_decorations(false)
+            .with_taskbar(false),
         ..Default::default()
     };
 
@@ -126,8 +131,8 @@ pub fn run_tray_app() {
             Ok(Box::new(TrayApp {
                 show_status,
                 show_kill_confirm,
-                kill_state: KillSwitchState::Idle,
-                consent_dialog: None,
+                kill_state: Arc::new(Mutex::new(KillSwitchState::Idle)),
+                consent_dialog: Arc::new(Mutex::new(None)),
                 consent_dialog_active,
                 ipc_rx: Mutex::new(ipc_rx),
             }) as Box<dyn eframe::App>)
@@ -148,8 +153,8 @@ enum KillSwitchState {
 struct TrayApp {
     show_status: Arc<AtomicBool>,
     show_kill_confirm: Arc<AtomicBool>,
-    kill_state: KillSwitchState,
-    consent_dialog: Option<super::consent_dialog::ConsentDialog>,
+    kill_state: Arc<Mutex<KillSwitchState>>,
+    consent_dialog: Arc<Mutex<Option<super::consent_dialog::ConsentDialog>>>,
     consent_dialog_active: Arc<AtomicBool>,
     ipc_rx: Mutex<mpsc::Receiver<IpcMessage>>,
 }
@@ -161,9 +166,10 @@ impl eframe::App for TrayApp {
             while let Ok(msg) = rx.try_recv() {
                 match msg {
                     IpcMessage::ConsentRequest(info) => {
-                        if self.consent_dialog.is_none() {
+                        let mut dialog = self.consent_dialog.lock().unwrap();
+                        if dialog.is_none() {
                             self.consent_dialog_active.store(true, Ordering::SeqCst);
-                            self.consent_dialog = Some(super::consent_dialog::ConsentDialog::new(
+                            *dialog = Some(super::consent_dialog::ConsentDialog::new(
                                 info.admin_name,
                                 info.session_description,
                                 info.command_id,
@@ -174,109 +180,161 @@ impl eframe::App for TrayApp {
             }
         }
 
-        // Show consent dialog if active.
-        if let Some(ref mut dialog) = self.consent_dialog {
-            if let Some(outcome) = dialog.show(ctx) {
-                let granted = matches!(outcome, crate::ipc::ConsentOutcome::Granted);
-                let command_id = dialog.command_id;
-
-                // Submit the consent response via IPC.
-                if let Ok(mut client) = IpcClient::connect() {
-                    let _ = client.submit_consent_response(&command_id, granted);
-                }
-
-                self.consent_dialog = None;
-                self.consent_dialog_active.store(false, Ordering::SeqCst);
-            }
+        // Consent dialog — always-on-top OS window per ADR-0009.
+        if self.consent_dialog_active.load(Ordering::SeqCst) {
+            let consent_dialog = self.consent_dialog.clone();
+            let consent_dialog_active = self.consent_dialog_active.clone();
+            ctx.show_viewport_deferred(
+                egui::ViewportId::from_hash_of("consent"),
+                egui::ViewportBuilder::default()
+                    .with_title("Ken \u{2014} Fernsteuerungs-Anfrage")
+                    .with_always_on_top()
+                    .with_inner_size([400.0, 220.0])
+                    .with_resizable(false),
+                move |ctx, _class| {
+                    let mut dialog_lock = consent_dialog.lock().unwrap();
+                    if let Some(ref mut dialog) = *dialog_lock {
+                        if let Some(outcome) = dialog.show_in_viewport(ctx) {
+                            let granted = matches!(outcome, crate::ipc::ConsentOutcome::Granted);
+                            let command_id = dialog.command_id;
+                            if let Ok(mut client) = IpcClient::connect() {
+                                let _ = client.submit_consent_response(&command_id, granted);
+                            }
+                            *dialog_lock = None;
+                            consent_dialog_active.store(false, Ordering::SeqCst);
+                            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                        }
+                    } else {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    }
+                },
+            );
         }
 
-        // Status window.
+        // Status window — independent OS window.
         if self.show_status.load(Ordering::SeqCst) {
-            super::status_window::show(ctx, &self.show_status);
+            let show_status = self.show_status.clone();
+            ctx.show_viewport_deferred(
+                egui::ViewportId::from_hash_of("status"),
+                egui::ViewportBuilder::default()
+                    .with_title("Ken Agent Status")
+                    .with_inner_size([450.0, 300.0])
+                    .with_resizable(false),
+                move |ctx, _class| {
+                    super::status_window::show_in_viewport(ctx, &show_status);
+                },
+            );
         }
 
-        // Kill switch confirmation.
+        // Kill switch confirmation — independent OS window.
         if self.show_kill_confirm.load(Ordering::SeqCst) {
-            match &self.kill_state {
-                KillSwitchState::Idle => {
-                    egui::Window::new("Kill switch")
-                        .collapsible(false)
-                        .resizable(false)
+            let kill_state = self.kill_state.clone();
+            let show_kill_confirm = self.show_kill_confirm.clone();
+            ctx.show_viewport_deferred(
+                egui::ViewportId::from_hash_of("kill_switch"),
+                egui::ViewportBuilder::default()
+                    .with_title("Kill Switch")
+                    .with_inner_size([420.0, 180.0])
+                    .with_resizable(false),
+                move |ctx, _class| {
+                    if ctx.input(|i| i.viewport().close_requested()) {
+                        show_kill_confirm.store(false, Ordering::SeqCst);
+                        return;
+                    }
+
+                    let close = egui::CentralPanel::default()
                         .show(ctx, |ui| {
-                            ui.label(
-                                "Ken wirklich stoppen? Das deaktiviert Ken auf diesem PC \
-                                 bis ein Administrator den Service wieder einschaltet.",
-                            );
-                            ui.add_space(10.0);
-                            ui.horizontal(|ui| {
-                                if ui.button("Ja, stoppen").clicked() {
-                                    match IpcClient::connect()
-                                        .and_then(|mut c| c.activate_kill_switch())
-                                    {
-                                        Ok(()) => {
-                                            self.kill_state = KillSwitchState::Confirmed;
-                                        }
-                                        Err(e) => {
-                                            // IPC failed — fall back to local activation
-                                            let data_dir = crate::config::data_dir();
-                                            let paths = crate::config::DataPaths::new(&data_dir);
-                                            let user =
-                                                std::env::var("USERNAME").unwrap_or_default();
-                                            if crate::killswitch::activate(
-                                                &paths.kill_switch_file,
-                                                "user requested via tray app (IPC fallback)",
-                                                &user,
-                                            )
-                                            .is_ok()
-                                            {
-                                                self.kill_state = KillSwitchState::Confirmed;
-                                            } else {
-                                                self.kill_state =
-                                                    KillSwitchState::Failed(e.to_string());
+                            let mut state = kill_state.lock().unwrap();
+                            let mut new_state: Option<KillSwitchState> = None;
+                            let mut close = false;
+
+                            match &*state {
+                                KillSwitchState::Idle => {
+                                    ui.label(
+                                        "Ken wirklich stoppen? Das deaktiviert Ken auf \
+                                         diesem PC bis ein Administrator den Service \
+                                         wieder einschaltet.",
+                                    );
+                                    ui.add_space(10.0);
+                                    let mut ja = false;
+                                    let mut abbrechen = false;
+                                    ui.horizontal(|ui| {
+                                        ja = ui.button("Ja, stoppen").clicked();
+                                        abbrechen = ui.button("Abbrechen").clicked();
+                                    });
+                                    if ja {
+                                        match IpcClient::connect()
+                                            .and_then(|mut c| c.activate_kill_switch())
+                                        {
+                                            Ok(()) => {
+                                                new_state = Some(KillSwitchState::Confirmed);
+                                            }
+                                            Err(e) => {
+                                                let data_dir = crate::config::data_dir();
+                                                let paths =
+                                                    crate::config::DataPaths::new(&data_dir);
+                                                let user =
+                                                    std::env::var("USERNAME").unwrap_or_default();
+                                                if crate::killswitch::activate(
+                                                    &paths.kill_switch_file,
+                                                    "user requested via tray app (IPC fallback)",
+                                                    &user,
+                                                )
+                                                .is_ok()
+                                                {
+                                                    new_state = Some(KillSwitchState::Confirmed);
+                                                } else {
+                                                    new_state = Some(KillSwitchState::Failed(
+                                                        e.to_string(),
+                                                    ));
+                                                }
                                             }
                                         }
                                     }
+                                    if abbrechen {
+                                        close = true;
+                                    }
                                 }
-                                if ui.button("Abbrechen").clicked() {
-                                    self.show_kill_confirm.store(false, Ordering::SeqCst);
+                                KillSwitchState::Confirmed => {
+                                    ui.label(
+                                        "Ken wurde gestoppt und wird beim nächsten Start \
+                                         nicht wieder ausgeführt.",
+                                    );
+                                    if ui.button("OK").clicked() {
+                                        new_state = Some(KillSwitchState::Idle);
+                                        close = true;
+                                    }
                                 }
-                            });
-                        });
-                }
-                KillSwitchState::Confirmed => {
-                    egui::Window::new("Ken gestoppt")
-                        .collapsible(false)
-                        .resizable(false)
-                        .show(ctx, |ui| {
-                            ui.label(
-                                "Ken wurde gestoppt und wird beim nächsten Start \
-                                 nicht wieder ausgeführt.",
-                            );
-                            if ui.button("OK").clicked() {
-                                self.kill_state = KillSwitchState::Idle;
-                                self.show_kill_confirm.store(false, Ordering::SeqCst);
+                                KillSwitchState::Failed(ref msg) => {
+                                    let msg = msg.clone();
+                                    ui.label(format!(
+                                        "Kill-Switch konnte nicht aktiviert werden: {msg}"
+                                    ));
+                                    ui.add_space(5.0);
+                                    ui.label(
+                                        "Manuell: Datei 'kill-switch-requested' \
+                                         im Ken-Datenverzeichnis erstellen, dann Service stoppen.",
+                                    );
+                                    if ui.button("OK").clicked() {
+                                        new_state = Some(KillSwitchState::Idle);
+                                        close = true;
+                                    }
+                                }
                             }
-                        });
-                }
-                KillSwitchState::Failed(ref msg) => {
-                    let msg = msg.clone();
-                    egui::Window::new("Fehler")
-                        .collapsible(false)
-                        .resizable(false)
-                        .show(ctx, |ui| {
-                            ui.label(format!("Kill-Switch konnte nicht aktiviert werden: {msg}"));
-                            ui.add_space(5.0);
-                            ui.label(
-                                "Manuell: Datei 'kill-switch-requested' \
-                                 im Ken-Datenverzeichnis erstellen, dann Service stoppen.",
-                            );
-                            if ui.button("OK").clicked() {
-                                self.kill_state = KillSwitchState::Idle;
-                                self.show_kill_confirm.store(false, Ordering::SeqCst);
+
+                            if let Some(ns) = new_state {
+                                *state = ns;
                             }
-                        });
-                }
-            }
+                            close
+                        })
+                        .inner;
+
+                    if close {
+                        show_kill_confirm.store(false, Ordering::SeqCst);
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    }
+                },
+            );
         }
 
         ctx.request_repaint_after(std::time::Duration::from_millis(250));
