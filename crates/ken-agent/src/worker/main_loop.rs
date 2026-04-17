@@ -55,9 +55,8 @@ pub async fn run(shutdown: Arc<AtomicBool>, paths: &DataPaths) -> Result<(), any
     // (issue #74).
     #[cfg(windows)]
     {
-        let session_id = unsafe {
-            windows::Win32::System::RemoteDesktop::WTSGetActiveConsoleSessionId()
-        };
+        let session_id =
+            unsafe { windows::Win32::System::RemoteDesktop::WTSGetActiveConsoleSessionId() };
         if session_id == 0xFFFF_FFFF {
             tracing::warn!("no active console session, IPC pipe server not starting");
         } else {
