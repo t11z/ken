@@ -102,16 +102,12 @@ fn format_host(ip: std::net::IpAddr) -> String {
 }
 
 fn default_public_url() -> String {
-    let host = detect_outbound_ip()
-        .map(format_host)
-        .unwrap_or_else(|| "localhost".to_string());
+    let host = detect_outbound_ip().map_or_else(|| "localhost".to_string(), format_host);
     format!("https://{host}:8443")
 }
 
 fn default_admin_public_url() -> String {
-    let host = detect_outbound_ip()
-        .map(format_host)
-        .unwrap_or_else(|| "localhost".to_string());
+    let host = detect_outbound_ip().map_or_else(|| "localhost".to_string(), format_host);
     format!("https://{host}:8444")
 }
 

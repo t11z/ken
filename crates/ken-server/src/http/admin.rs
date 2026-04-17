@@ -11,7 +11,7 @@
 
 use askama::Template;
 use axum::extract::{Form, Path, State};
-use axum::http::{header::SET_COOKIE, HeaderMap};
+use axum::http::{HeaderMap, header::SET_COOKIE};
 use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum::routing::{get, post};
 use axum::Router;
