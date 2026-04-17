@@ -21,7 +21,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: build agent release
-        run: cargo build -p ken-agent --release
+        run: cargo build -p ken-agent --release --features tray-app
 
       - name: install WiX
         run: dotnet tool install --global wix
