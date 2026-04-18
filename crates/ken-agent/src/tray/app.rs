@@ -17,12 +17,14 @@ use tray_icon::menu::{Menu, MenuEvent, MenuItem};
 use tray_icon::TrayIconBuilder;
 
 use crate::ipc::client::IpcClient;
-use crate::ipc::PendingConsentInfo;
+use crate::ipc::{AgentStatus, PendingConsentInfo};
 
 /// Messages from the IPC polling thread to the UI.
 enum IpcMessage {
     /// A consent request arrived from the service.
     ConsentRequest(PendingConsentInfo),
+    /// A status poll result arrived from the service (Ok) or failed (Err).
+    StatusUpdate(Result<AgentStatus, String>),
 }
 
 /// Run the tray app event loop.
@@ -103,6 +105,7 @@ pub fn run_tray_app() {
     let consent_dialog_active = Arc::new(AtomicBool::new(false));
     let consent_dialog_active_clone = consent_dialog_active.clone();
 
+    let ipc_tx_status = ipc_tx.clone();
     std::thread::spawn(move || {
         loop {
             std::thread::sleep(std::time::Duration::from_millis(500));
@@ -121,6 +124,16 @@ pub fn run_tray_app() {
                 let _ = ipc_tx.send(IpcMessage::ConsentRequest(info));
             }
         }
+    });
+
+    // Status polling thread — polls every 2 seconds and caches the result so
+    // the status window viewport callback never needs to block the render thread.
+    std::thread::spawn(move || loop {
+        let result = IpcClient::connect()
+            .and_then(|mut c| c.get_status())
+            .map_err(|e| e.to_string());
+        let _ = ipc_tx_status.send(IpcMessage::StatusUpdate(result));
+        std::thread::sleep(std::time::Duration::from_secs(2));
     });
 
     // Root window: invisible, zero-sized, no decorations, no taskbar entry.
@@ -147,6 +160,7 @@ pub fn run_tray_app() {
                 consent_dialog_active,
                 enroll_dialog: Arc::new(Mutex::new(None)),
                 ipc_rx: Mutex::new(ipc_rx),
+                cached_status: Arc::new(Mutex::new(None)),
             }) as Box<dyn eframe::App>)
         }),
     );
@@ -171,6 +185,8 @@ struct TrayApp {
     consent_dialog_active: Arc<AtomicBool>,
     enroll_dialog: Arc<Mutex<Option<super::enroll_dialog::EnrollDialog>>>,
     ipc_rx: Mutex<mpsc::Receiver<IpcMessage>>,
+    /// Latest status polled by the background thread. `None` until first result.
+    cached_status: Arc<Mutex<Option<Result<AgentStatus, String>>>>,
 }
 
 impl eframe::App for TrayApp {
@@ -193,6 +209,9 @@ impl eframe::App for TrayApp {
                                 info.command_id,
                             ));
                         }
+                    }
+                    IpcMessage::StatusUpdate(result) => {
+                        *self.cached_status.lock().unwrap() = Some(result);
                     }
                 }
             }
@@ -232,6 +251,7 @@ impl eframe::App for TrayApp {
         // Status window — independent OS window.
         if self.show_status.load(Ordering::SeqCst) {
             let show_status = self.show_status.clone();
+            let cached_status = self.cached_status.clone();
             ctx.show_viewport_deferred(
                 egui::ViewportId::from_hash_of("status"),
                 egui::ViewportBuilder::default()
@@ -239,7 +259,7 @@ impl eframe::App for TrayApp {
                     .with_inner_size([450.0, 300.0])
                     .with_resizable(false),
                 move |ctx, _class| {
-                    super::status_window::show_in_viewport(ctx, &show_status);
+                    super::status_window::show_in_viewport(ctx, &show_status, &cached_status);
                 },
             );
         }
