@@ -66,75 +66,25 @@ pub fn run_tray_app() {
     let show_status = Arc::new(AtomicBool::new(false));
     let show_kill_confirm = Arc::new(AtomicBool::new(false));
     let show_enroll = Arc::new(AtomicBool::new(false));
+    let consent_dialog_active = Arc::new(AtomicBool::new(false));
 
     // Channel for IPC polling thread → UI
     let (ipc_tx, ipc_rx) = mpsc::channel::<IpcMessage>();
 
-    // Menu event handler thread
-    let show_status_clone = show_status.clone();
-    let show_kill_clone = show_kill_confirm.clone();
-    let show_enroll_clone = show_enroll.clone();
     let status_id = item_status.id().clone();
     let audit_id = item_audit.id().clone();
     let kill_id = item_kill.id().clone();
     let enroll_id = item_enroll.id().clone();
     let quit_id = item_quit.id().clone();
 
-    std::thread::spawn(move || {
-        let receiver = MenuEvent::receiver();
-        while let Ok(event) = receiver.recv() {
-            if event.id == status_id {
-                show_status_clone.store(true, Ordering::SeqCst);
-            } else if event.id == audit_id {
-                let data_dir = crate::config::data_dir();
-                let paths = crate::config::DataPaths::new(&data_dir);
-                let _ = std::process::Command::new("notepad.exe")
-                    .arg(&paths.audit_log)
-                    .spawn();
-            } else if event.id == kill_id {
-                show_kill_clone.store(true, Ordering::SeqCst);
-            } else if event.id == enroll_id {
-                show_enroll_clone.store(true, Ordering::SeqCst);
-            } else if event.id == quit_id {
-                std::process::exit(0);
-            }
-        }
-    });
-
-    // IPC consent polling thread — polls every 500ms when no dialog is showing.
-    let consent_dialog_active = Arc::new(AtomicBool::new(false));
-    let consent_dialog_active_clone = consent_dialog_active.clone();
-
+    // Clones for background threads spawned from inside the creator closure;
+    // the originals below are moved into the TrayApp struct.
+    let show_status_menu = show_status.clone();
+    let show_kill_menu = show_kill_confirm.clone();
+    let show_enroll_menu = show_enroll.clone();
+    let consent_dialog_active_poll = consent_dialog_active.clone();
+    let ipc_tx_consent = ipc_tx.clone();
     let ipc_tx_status = ipc_tx.clone();
-    std::thread::spawn(move || {
-        loop {
-            std::thread::sleep(std::time::Duration::from_millis(500));
-
-            // Skip polling while a consent dialog is already showing.
-            if consent_dialog_active_clone.load(Ordering::SeqCst) {
-                continue;
-            }
-
-            let pending = match IpcClient::connect() {
-                Ok(mut client) => client.get_pending_consent(),
-                Err(_) => continue, // service not reachable, try again later
-            };
-
-            if let Ok(Some(info)) = pending {
-                let _ = ipc_tx.send(IpcMessage::ConsentRequest(info));
-            }
-        }
-    });
-
-    // Status polling thread — polls every 2 seconds and caches the result so
-    // the status window viewport callback never needs to block the render thread.
-    std::thread::spawn(move || loop {
-        let result = IpcClient::connect()
-            .and_then(|mut c| c.get_status())
-            .map_err(|e| e.to_string());
-        let _ = ipc_tx_status.send(IpcMessage::StatusUpdate(result));
-        std::thread::sleep(std::time::Duration::from_secs(2));
-    });
 
     // Root window: invisible, zero-sized, no decorations, no taskbar entry.
     // All visible surfaces are opened as independent OS-level viewports below.
@@ -150,7 +100,72 @@ pub fn run_tray_app() {
     let _ = eframe::run_native(
         "Ken Agent",
         options,
-        Box::new(move |_cc| {
+        Box::new(move |cc| {
+            // Background threads must wake the egui render loop after mutating
+            // shared state. Without this, the permanently-hidden root viewport
+            // lets winit's scheduled repaints stall on Windows and menu clicks
+            // never reach `update()` (issue #88).
+            let egui_ctx = cc.egui_ctx.clone();
+
+            let ctx_menu = egui_ctx.clone();
+            std::thread::spawn(move || {
+                let receiver = MenuEvent::receiver();
+                while let Ok(event) = receiver.recv() {
+                    if event.id == status_id {
+                        show_status_menu.store(true, Ordering::SeqCst);
+                        ctx_menu.request_repaint();
+                    } else if event.id == audit_id {
+                        let data_dir = crate::config::data_dir();
+                        let paths = crate::config::DataPaths::new(&data_dir);
+                        let _ = std::process::Command::new("notepad.exe")
+                            .arg(&paths.audit_log)
+                            .spawn();
+                    } else if event.id == kill_id {
+                        show_kill_menu.store(true, Ordering::SeqCst);
+                        ctx_menu.request_repaint();
+                    } else if event.id == enroll_id {
+                        show_enroll_menu.store(true, Ordering::SeqCst);
+                        ctx_menu.request_repaint();
+                    } else if event.id == quit_id {
+                        std::process::exit(0);
+                    }
+                }
+            });
+
+            let ctx_consent = egui_ctx.clone();
+            std::thread::spawn(move || loop {
+                std::thread::sleep(std::time::Duration::from_millis(500));
+
+                if consent_dialog_active_poll.load(Ordering::SeqCst) {
+                    continue;
+                }
+
+                let pending = match IpcClient::connect() {
+                    Ok(mut client) => client.get_pending_consent(),
+                    Err(_) => continue,
+                };
+
+                if let Ok(Some(info)) = pending {
+                    if ipc_tx_consent
+                        .send(IpcMessage::ConsentRequest(info))
+                        .is_ok()
+                    {
+                        ctx_consent.request_repaint();
+                    }
+                }
+            });
+
+            let ctx_status = egui_ctx;
+            std::thread::spawn(move || loop {
+                let result = IpcClient::connect()
+                    .and_then(|mut c| c.get_status())
+                    .map_err(|e| e.to_string());
+                if ipc_tx_status.send(IpcMessage::StatusUpdate(result)).is_ok() {
+                    ctx_status.request_repaint();
+                }
+                std::thread::sleep(std::time::Duration::from_secs(2));
+            });
+
             Ok(Box::new(TrayApp {
                 show_status,
                 show_kill_confirm,
