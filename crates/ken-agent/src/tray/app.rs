@@ -118,14 +118,12 @@ pub fn run_tray_app() {
 
     // Status polling thread — polls every 2 seconds and caches the result so
     // the status window viewport callback never needs to block the render thread.
-    std::thread::spawn(move || {
-        loop {
-            let result = IpcClient::connect()
-                .and_then(|mut c| c.get_status())
-                .map_err(|e| e.to_string());
-            let _ = ipc_tx_status.send(IpcMessage::StatusUpdate(result));
-            std::thread::sleep(std::time::Duration::from_secs(2));
-        }
+    std::thread::spawn(move || loop {
+        let result = IpcClient::connect()
+            .and_then(|mut c| c.get_status())
+            .map_err(|e| e.to_string());
+        let _ = ipc_tx_status.send(IpcMessage::StatusUpdate(result));
+        std::thread::sleep(std::time::Duration::from_secs(2));
     });
 
     // Root window: invisible, zero-sized, no decorations, no taskbar entry.
