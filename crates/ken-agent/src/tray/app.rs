@@ -38,11 +38,16 @@ pub fn run_tray_app() {
     let item_status = MenuItem::new("Status", true, None);
     let item_audit = MenuItem::new("View audit log", true, None);
     let item_kill = MenuItem::new("Kill switch", true, None);
+    let data_dir = crate::config::data_dir();
+    let paths = crate::config::DataPaths::new(&data_dir);
+    let already_enrolled = paths.endpoint_id_file.exists();
+    let item_enroll = MenuItem::new("Enroll\u{2026}", !already_enrolled, None);
     let item_quit = MenuItem::new("Quit", true, None);
 
     let _ = menu.append(&item_status);
     let _ = menu.append(&item_audit);
     let _ = menu.append(&item_kill);
+    let _ = menu.append(&item_enroll);
     let _ = menu.append(&item_quit);
 
     // Placeholder 16x16 RGBA icon (solid blue, one pixel repeated).
@@ -58,6 +63,7 @@ pub fn run_tray_app() {
 
     let show_status = Arc::new(AtomicBool::new(false));
     let show_kill_confirm = Arc::new(AtomicBool::new(false));
+    let show_enroll = Arc::new(AtomicBool::new(false));
 
     // Channel for IPC polling thread → UI
     let (ipc_tx, ipc_rx) = mpsc::channel::<IpcMessage>();
@@ -65,9 +71,11 @@ pub fn run_tray_app() {
     // Menu event handler thread
     let show_status_clone = show_status.clone();
     let show_kill_clone = show_kill_confirm.clone();
+    let show_enroll_clone = show_enroll.clone();
     let status_id = item_status.id().clone();
     let audit_id = item_audit.id().clone();
     let kill_id = item_kill.id().clone();
+    let enroll_id = item_enroll.id().clone();
     let quit_id = item_quit.id().clone();
 
     std::thread::spawn(move || {
@@ -83,6 +91,8 @@ pub fn run_tray_app() {
                     .spawn();
             } else if event.id == kill_id {
                 show_kill_clone.store(true, Ordering::SeqCst);
+            } else if event.id == enroll_id {
+                show_enroll_clone.store(true, Ordering::SeqCst);
             } else if event.id == quit_id {
                 std::process::exit(0);
             }
@@ -131,9 +141,11 @@ pub fn run_tray_app() {
             Ok(Box::new(TrayApp {
                 show_status,
                 show_kill_confirm,
+                show_enroll,
                 kill_state: Arc::new(Mutex::new(KillSwitchState::Idle)),
                 consent_dialog: Arc::new(Mutex::new(None)),
                 consent_dialog_active,
+                enroll_dialog: Arc::new(Mutex::new(None)),
                 ipc_rx: Mutex::new(ipc_rx),
             }) as Box<dyn eframe::App>)
         }),
@@ -153,9 +165,11 @@ enum KillSwitchState {
 struct TrayApp {
     show_status: Arc<AtomicBool>,
     show_kill_confirm: Arc<AtomicBool>,
+    show_enroll: Arc<AtomicBool>,
     kill_state: Arc<Mutex<KillSwitchState>>,
     consent_dialog: Arc<Mutex<Option<super::consent_dialog::ConsentDialog>>>,
     consent_dialog_active: Arc<AtomicBool>,
+    enroll_dialog: Arc<Mutex<Option<super::enroll_dialog::EnrollDialog>>>,
     ipc_rx: Mutex<mpsc::Receiver<IpcMessage>>,
 }
 
@@ -336,6 +350,34 @@ impl eframe::App for TrayApp {
                     if close {
                         show_kill_confirm.store(false, Ordering::SeqCst);
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    }
+                },
+            );
+        }
+
+        // Enrollment dialog — independent OS window.
+        if self.show_enroll.load(Ordering::SeqCst) {
+            {
+                let mut dlg = self.enroll_dialog.lock().unwrap();
+                if dlg.is_none() {
+                    *dlg = Some(super::enroll_dialog::EnrollDialog::new());
+                }
+            }
+            let enroll_dialog = self.enroll_dialog.clone();
+            let show_enroll = self.show_enroll.clone();
+            ctx.show_viewport_deferred(
+                egui::ViewportId::from_hash_of("enroll"),
+                egui::ViewportBuilder::default()
+                    .with_title("Ken Agent \u{2014} Einschreiben")
+                    .with_inner_size([480.0, 200.0])
+                    .with_resizable(false),
+                move |ctx, _class| {
+                    let mut dlg = enroll_dialog.lock().unwrap();
+                    if let Some(ref mut dialog) = *dlg {
+                        dialog.show_in_viewport(ctx, &show_enroll);
+                        if !show_enroll.load(Ordering::SeqCst) {
+                            *dlg = None;
+                        }
                     }
                 },
             );

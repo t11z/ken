@@ -17,6 +17,8 @@ pub mod app;
 #[cfg(all(windows, feature = "tray-app"))]
 pub mod consent_dialog;
 #[cfg(all(windows, feature = "tray-app"))]
+pub mod enroll_dialog;
+#[cfg(all(windows, feature = "tray-app"))]
 pub mod status_window;
 
 /// Run the tray app. Called from the `ken-agent.exe tray` subcommand.

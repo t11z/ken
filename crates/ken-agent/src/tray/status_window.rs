@@ -21,6 +21,7 @@ use crate::ipc::AgentStatus;
 pub fn show_in_viewport(ctx: &egui::Context, visible: &Arc<AtomicBool>) {
     if ctx.input(|i| i.viewport().close_requested()) {
         visible.store(false, Ordering::SeqCst);
+        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         return;
     }
 
