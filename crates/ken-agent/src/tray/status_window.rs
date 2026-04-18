@@ -7,7 +7,7 @@
 #![cfg(all(windows, feature = "tray-app"))]
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use eframe::egui;
 
@@ -16,18 +16,27 @@ use crate::ipc::AgentStatus;
 
 /// Render the status window inside an OS-level viewport (via `show_viewport_deferred`).
 ///
-/// Uses `egui::CentralPanel` so the content fills the independent OS window.
+/// Reads from `cached_status`, which is populated every 2 s by a background
+/// thread in `TrayApp` — no blocking IPC call is made on the render thread.
 /// Sets `visible` to `false` when the OS close button is clicked. ADR-0009.
-pub fn show_in_viewport(ctx: &egui::Context, visible: &Arc<AtomicBool>) {
+pub fn show_in_viewport(
+    ctx: &egui::Context,
+    visible: &Arc<AtomicBool>,
+    cached_status: &Arc<Mutex<Option<Result<AgentStatus, String>>>>,
+) {
     if ctx.input(|i| i.viewport().close_requested()) {
         visible.store(false, Ordering::SeqCst);
         return;
     }
 
-    let status = fetch_status_via_ipc();
+    let status = cached_status.lock().unwrap();
 
-    egui::CentralPanel::default().show(ctx, |ui| match status {
-        Ok(status) => {
+    egui::CentralPanel::default().show(ctx, |ui| match &*status {
+        None => {
+            ui.spinner();
+            ui.label("Connecting to service…");
+        }
+        Some(Ok(status)) => {
             egui::Grid::new("status_grid").striped(true).show(ui, |ui| {
                 ui.label("Service running:");
                 ui.label(if status.service_running { "Yes" } else { "No" });
@@ -60,25 +69,14 @@ pub fn show_in_viewport(ctx: &egui::Context, visible: &Arc<AtomicBool>) {
             });
 
             ui.add_space(10.0);
-            ui.label(
-                "Status refreshes every 3 seconds while this \
-                 window is open.",
-            );
+            ui.label("Status refreshes every 2 seconds while this window is open.");
         }
-        Err(ref e) => {
+        Some(Err(ref e)) => {
             ui.label(format!("Service not reachable: {e}"));
             ui.add_space(10.0);
-            if ui.button("Retry").clicked() {
-                // Next repaint will re-fetch.
-            }
+            ui.label("Retrying every 2 seconds.");
         }
     });
-}
-
-/// Fetch status from the service via IPC.
-fn fetch_status_via_ipc() -> Result<AgentStatus, anyhow::Error> {
-    let mut client = IpcClient::connect()?;
-    client.get_status()
 }
 
 /// Fetch audit log entries from the service via IPC.
