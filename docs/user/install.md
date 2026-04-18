@@ -40,35 +40,40 @@
 
 ## Agent (Windows PC)
 
-> **Note:** Phase 1 does not yet produce an MSI installer. The agent must be built from source with `cargo build -p ken-agent --release` targeting `x86_64-pc-windows-msvc`.
+### Prerequisites
+
+- The Ken server must already be running and reachable from the Windows PC.
+- You need administrator rights on the Windows PC.
 
 ### Steps
 
-1. Build the agent binary (on a Windows machine with Rust installed):
+1. Open the [Ken releases page](https://github.com/t11z/ken/releases) and download `ken-agent.msi` from the latest release.
+
+2. Run the installer. You can double-click the file or run it from PowerShell:
 
    ```powershell
-   cargo build -p ken-agent --release --target x86_64-pc-windows-msvc
+   msiexec /i ken-agent.msi /quiet /norestart
    ```
 
-2. In the Ken admin UI, go to **Enroll** and create an enrollment URL.
+   > **Self-signed publisher warning:** Until the Ken project obtains an OV or EV code-signing certificate, Windows Defender SmartScreen will show an "Unknown publisher" warning when double-clicking the MSI. Click **More info → Run anyway** to proceed. The family IT chief can also install the Ken signing certificate as trusted on each endpoint to suppress the warning; see ADR-0011 for details.
 
-3. On the Windows PC, run enrollment:
+3. In the Ken admin UI, go to **Enroll** and create an enrollment URL.
+
+4. On the Windows PC, run enrollment from an administrator PowerShell prompt:
 
    ```powershell
-   .\ken-agent.exe enroll --url <enrollment-url>
+   & "C:\Program Files\Ken\ken-agent.exe" enroll --url <enrollment-url>
    ```
 
-4. Install the Windows service:
-
-   ```powershell
-   .\ken-agent.exe install
-   ```
-
-5. The agent will start automatically and begin sending heartbeats.
+5. The agent service was registered by the MSI and will start automatically after enrollment, then begin sending heartbeats.
 
 ### Verifying
 
-Run `ken-agent.exe status` to check enrollment state and service health.
+Run the following from an administrator PowerShell prompt to check enrollment state and service health:
+
+```powershell
+& "C:\Program Files\Ken\ken-agent.exe" status
+```
 
 ## Recovery
 
